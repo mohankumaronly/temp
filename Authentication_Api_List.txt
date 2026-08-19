@@ -1,0 +1,36 @@
+AUTHENTICATION ONLY ENDPOINT
+
+
+[ PLATFORM ROUTING PREFIX: /api/v1 ]
+
+--------------------------------------------------------------------------------
+1. PUBLIC AUTHENTICATION GATEWAY (No Session Required)
+--------------------------------------------------------------------------------
+▶ POST /api/v1/auth/otp/request
+  • Purpose: Generates a secure 6-digit random code, hashes it, saves it to the database with a 5-minute expiry, and triggers Brevo to email it to the user.
+  • Request Body: { "email": "string" }
+  • Expected Response: 200 OK -> { "status": "success", "message": "Verification code sent successfully to your email." }
+
+▶ POST /api/v1/auth/otp/verify
+  • Purpose: Validates the OTP against the database. If correct, deletes the verification row, creates a user profile if new (assigning 15 free tokens), and sets a secure HttpOnly JWT session cookie.
+  • Request Body: { "email": "string", "code": "string" }
+  • Expected Response: 200 OK -> Sets Header [Set-Cookie: jwt=...; HttpOnly; Secure; SameSite=Strict]
+
+▶ GET /oauth2/authorization/google
+  • Purpose: Triggers the automated Spring Security OAuth2 handshake; redirects the browser directly to the official Google login gate.
+  • Request Body: None (Browser Redirect)
+
+▶ GET /oauth2/authorization/github
+  • Purpose: Triggers the automated Spring Security OAuth2 handshake; redirects the browser directly to the official GitHub developer login panel.
+
+
+--------------------------------------------------------------------------------
+2. PROTECTED USER PROFILE & SESSION (Valid HttpOnly JWT Cookie Required)
+--------------------------------------------------------------------------------
+▶ GET /api/v1/users/me
+  • Purpose: Decodes the session cookie cryptographically to return the logged-in user's account status, access privileges, and current token wallet ledger metrics.
+  • Expected Response: 200 OK -> { "id": long, "email": "string", "role": "string", "tokenBalance": int }
+
+▶ POST /api/v1/auth/logout
+  • Purpose: Command interceptor that forces the client's web browser to overwrite, expire, and wipe the secure HttpOnly JWT cookie instantly.
+  • Expected Response: 200 OK -> Sets Header [Set-Cookie: jwt=; Max-Age=0]
