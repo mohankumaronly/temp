@@ -1,22 +1,13 @@
 package com.rockranger.analyzer.authentication.dto.request;
 
-public class UserRequest {
+public class LoginRequest {
 
-
-    private String fullName;
     private String email;
     private String password;
 
-    public UserRequest() {
+    public LoginRequest() {
     }
 
-    public String getFullName() {
-        return fullName;
-    }
-
-    public void setFullName(String fullName) {
-        this.fullName = fullName;
-    }
 
     public String getEmail() {
         return email;
