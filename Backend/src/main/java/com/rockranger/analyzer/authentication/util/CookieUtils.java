@@ -48,4 +48,34 @@ public class CookieUtils {
 
         return builder.build();
     }
+
+    public ResponseCookie createRefreshTokenCookie(String token) {
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from("refreshToken", token)
+                .httpOnly(true)
+                .secure(secure)
+                .path("/api/v1/auth/refresh")
+                .maxAge(7 * 86400) // 7 days
+                .sameSite(sameSite);
+
+        if (domain != null && !domain.isBlank()) {
+            builder.domain(domain);
+        }
+
+        return builder.build();
+    }
+
+    public ResponseCookie createCleanRefreshTokenCookie() {
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from("refreshToken", "")
+                .httpOnly(true)
+                .secure(secure)
+                .path("/api/v1/auth/refresh")
+                .maxAge(0)
+                .sameSite(sameSite);
+
+        if (domain != null && !domain.isBlank()) {
+            builder.domain(domain);
+        }
+
+        return builder.build();
+    }
 }

@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "8f3b4c10-91a2-4d5e-b873-123456789abc",
 		"name": "Authentication API Collection",
-		"description": "Complete Postman Collection for testing Spring Boot Authentication Endpoints including OTP Email verification, Login, JWT authentication, User Profile, and Logout.",
+		"description": "Complete Postman Collection for testing Spring Boot Authentication Endpoints including OTP Email verification, Login, JWT authentication, User Profile, Logout, Forgot Password, Reset Password, and Token Refresh.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -22,12 +22,22 @@
 			"type": "string"
 		},
 		{
+			"key": "newPassword",
+			"value": "NewPassword123!",
+			"type": "string"
+		},
+		{
 			"key": "otpCode",
 			"value": "123456",
 			"type": "string"
 		},
 		{
 			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refreshToken",
 			"value": "",
 			"type": "string"
 		}
@@ -127,7 +137,9 @@
 							"var jsonData = pm.response.json();",
 							"if (jsonData.accessToken) {",
 							"    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
-							"    console.log('Saved accessToken to collection variables');",
+							"}",
+							"if (jsonData.refreshToken) {",
+							"    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
 							"}"
 						],
 						"type": "text/javascript"
@@ -160,7 +172,7 @@
 						"verify"
 					]
 				},
-				"description": "Validates the 6-digit OTP received via email, marks email as verified, returns JWT access token, and sets HttpOnly JWT cookie."
+				"description": "Validates the 6-digit OTP received via email, marks email as verified, returns JWT access token and refresh token."
 			},
 			"response": []
 		},
@@ -174,7 +186,9 @@
 							"var jsonData = pm.response.json();",
 							"if (jsonData.accessToken) {",
 							"    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
-							"    console.log('Saved accessToken to collection variables');",
+							"}",
+							"if (jsonData.refreshToken) {",
+							"    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
 							"}"
 						],
 						"type": "text/javascript"
@@ -242,14 +256,125 @@
 			"response": []
 		},
 		{
-			"name": "7. User Logout",
+			"name": "7. Refresh Access Token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.accessToken) {",
+							"    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+							"}",
+							"if (jsonData.refreshToken) {",
+							"    pm.collectionVariables.set('refreshToken', jsonData.refreshToken);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/refresh",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"refresh"
+					]
+				},
+				"description": "Exchanges a valid refresh token for a new access token and new refresh token."
+			},
+			"response": []
+		},
+		{
+			"name": "8. Forgot Password (Request OTP)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{testEmail}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"forgot-password"
+					]
+				},
+				"description": "Triggers a password reset 6-digit OTP to the user's email."
+			},
+			"response": []
+		},
+		{
+			"name": "9. Reset Password",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"code\": \"{{otpCode}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/reset-password",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"reset-password"
+					]
+				},
+				"description": "Verifies the reset OTP code and updates the user password."
+			},
+			"response": []
+		},
+		{
+			"name": "10. User Logout",
 			"event": [
 				{
 					"listen": "test",
 					"script": {
 						"exec": [
 							"pm.collectionVariables.set('accessToken', '');",
-							"console.log('Cleared accessToken collection variable on logout');"
+							"pm.collectionVariables.set('refreshToken', '');",
+							"console.log('Cleared tokens on logout');"
 						],
 						"type": "text/javascript"
 					}
@@ -270,7 +395,7 @@
 						"logout"
 					]
 				},
-				"description": "Clears the HttpOnly JWT session cookie and clears the saved Postman accessToken variable."
+				"description": "Revokes active refresh tokens in database and clears session cookies."
 			},
 			"response": []
 		}

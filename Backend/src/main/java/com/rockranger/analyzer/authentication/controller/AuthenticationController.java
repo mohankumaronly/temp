@@ -1,18 +1,15 @@
 package com.rockranger.analyzer.authentication.controller;
 
-import com.rockranger.analyzer.authentication.dto.request.LoginRequest;
-import com.rockranger.analyzer.authentication.dto.request.RegisterRequest;
-import com.rockranger.analyzer.authentication.dto.request.RequestOtpRequest;
-import com.rockranger.analyzer.authentication.dto.request.VerifyOtpRequest;
-import com.rockranger.analyzer.authentication.dto.response.LoginResponse;
-import com.rockranger.analyzer.authentication.dto.response.RegisterResponse;
-import com.rockranger.analyzer.authentication.dto.response.VerifyOtpResponse;
+import com.rockranger.analyzer.authentication.dto.request.*;
+import com.rockranger.analyzer.authentication.dto.response.*;
+import com.rockranger.analyzer.authentication.entity.User;
 import com.rockranger.analyzer.authentication.service.AuthenticationService;
 import com.rockranger.analyzer.authentication.util.CookieUtils;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -56,10 +53,12 @@ public class AuthenticationController {
     ) {
         VerifyOtpResponse result = authenticationService.verifyOtp(verifyOtpRequest);
 
-        ResponseCookie cookie = cookieUtils.createJwtCookie(result.getAccessToken());
+        ResponseCookie jwtCookie = cookieUtils.createJwtCookie(result.getAccessToken());
+        ResponseCookie refreshCookie = cookieUtils.createRefreshTokenCookie(result.getRefreshToken());
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
                 .body(result);
     }
 
@@ -69,19 +68,57 @@ public class AuthenticationController {
     ) {
         LoginResponse result = authenticationService.login(loginRequest);
 
-        ResponseCookie cookie = cookieUtils.createJwtCookie(result.getAccessToken());
+        ResponseCookie jwtCookie = cookieUtils.createJwtCookie(result.getAccessToken());
+        ResponseCookie refreshCookie = cookieUtils.createRefreshTokenCookie(result.getRefreshToken());
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .body(result);
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<RegisterResponse> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request
+    ) {
+        RegisterResponse response = authenticationService.forgotPassword(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<RegisterResponse> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        RegisterResponse response = authenticationService.resetPassword(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<VerifyOtpResponse> refreshToken(
+            @RequestBody(required = false) RefreshTokenRequest request,
+            @CookieValue(name = "refreshToken", required = false) String refreshTokenFromCookie
+    ) {
+        VerifyOtpResponse result = authenticationService.refreshToken(request, refreshTokenFromCookie);
+
+        ResponseCookie jwtCookie = cookieUtils.createJwtCookie(result.getAccessToken());
+        ResponseCookie refreshCookie = cookieUtils.createRefreshTokenCookie(result.getRefreshToken());
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
                 .body(result);
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Map<String, String>> logout() {
-        ResponseCookie cookie = cookieUtils.createCleanJwtCookie();
+    public ResponseEntity<Map<String, String>> logout(@AuthenticationPrincipal User user) {
+        authenticationService.logoutUser(user);
+
+        ResponseCookie jwtCookie = cookieUtils.createCleanJwtCookie();
+        ResponseCookie refreshCookie = cookieUtils.createCleanRefreshTokenCookie();
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
                 .body(Map.of(
                         "status", "success",
                         "message", "Logged out successfully."
