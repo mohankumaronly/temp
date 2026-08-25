@@ -243,6 +243,18 @@
 		},
 		{
 			"name": "7. User Logout",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.collectionVariables.set('accessToken', '');",
+							"console.log('Cleared accessToken collection variable on logout');"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
 			"request": {
 				"method": "POST",
 				"header": [],
@@ -258,7 +270,7 @@
 						"logout"
 					]
 				},
-				"description": "Clears the HttpOnly JWT session cookie."
+				"description": "Clears the HttpOnly JWT session cookie and clears the saved Postman accessToken variable."
 			},
 			"response": []
 		}

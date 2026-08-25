@@ -9,6 +9,7 @@ import com.rockranger.analyzer.authentication.dto.response.UserResponse;
 import com.rockranger.analyzer.authentication.dto.response.VerifyOtpResponse;
 import com.rockranger.analyzer.authentication.entity.EmailVerificationOtp;
 import com.rockranger.analyzer.authentication.entity.User;
+import com.rockranger.analyzer.authentication.exception.*;
 import com.rockranger.analyzer.authentication.repository.EmailVerificationOtpRepository;
 import com.rockranger.analyzer.authentication.repository.UserRepository;
 import com.rockranger.analyzer.authentication.security.JwtService;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -54,9 +56,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (existingUserOpt.isPresent()) {
             user = existingUserOpt.get();
             if (user.isEmailVerified()) {
-                RegisterResponse response = new RegisterResponse();
-                response.setMessage("Email is already registered.");
-                return response;
+                throw new EmailAlreadyRegisteredException("Email is already registered.");
             }
             if (registerRequest.getFullName() != null && !registerRequest.getFullName().isBlank()) {
                 user.setFullName(registerRequest.getFullName());
@@ -85,14 +85,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Transactional
     public RegisterResponse requestOtp(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseGet(() -> {
-                    User newUser = new User();
-                    newUser.setEmail(email);
-                    newUser.setFullName(email.split("@")[0]);
-                    newUser.setPasswordHash(passwordEncoder.encode("OauthPass_" + System.currentTimeMillis()));
-                    newUser.setEmailVerified(false);
-                    return userRepository.save(newUser);
-                });
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
+
+        if (user.isEmailVerified()) {
+            throw new EmailAlreadyVerifiedException("Email is already verified.");
+        }
 
         generateAndSendOtp(user);
 
@@ -105,27 +102,27 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Transactional
     public VerifyOtpResponse verifyOtp(VerifyOtpRequest verifyOtpRequest) {
         User user = userRepository.findByEmail(verifyOtpRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found with email: " + verifyOtpRequest.getEmail()));
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + verifyOtpRequest.getEmail()));
 
         EmailVerificationOtp otpEntity = emailVerificationOtpRepository.findTopByUserOrderByCreatedAtDesc(user)
-                .orElseThrow(() -> new RuntimeException("No OTP request found for this email."));
+                .orElseThrow(() -> new InvalidOtpException("No OTP request found for this email."));
 
         if (otpEntity.isVerified()) {
-            throw new RuntimeException("This OTP has already been verified.");
+            throw new InvalidOtpException("This OTP has already been verified.");
         }
 
         if (LocalDateTime.now().isAfter(otpEntity.getExpiresAt())) {
-            throw new RuntimeException("OTP code has expired. Please request a new code.");
+            throw new OtpExpiredException("OTP code has expired. Please request a new code.");
         }
 
         if (otpEntity.getAttemptCount() >= 5) {
-            throw new RuntimeException("Maximum OTP verification attempts exceeded. Please request a new code.");
+            throw new InvalidOtpException("Maximum OTP verification attempts exceeded. Please request a new code.");
         }
 
         if (!passwordEncoder.matches(verifyOtpRequest.getOtp(), otpEntity.getOtpHash())) {
             otpEntity.setAttemptCount(otpEntity.getAttemptCount() + 1);
             emailVerificationOtpRepository.save(otpEntity);
-            throw new RuntimeException("Invalid OTP code.");
+            throw new InvalidOtpException("Invalid OTP code.");
         }
 
         otpEntity.setVerified(true);
@@ -147,14 +144,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Transactional
     public LoginResponse login(LoginRequest loginRequest) {
         User user = userRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password."));
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password."));
 
         if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
-            throw new RuntimeException("Invalid email or password.");
+            throw new InvalidCredentialsException("Invalid email or password.");
         }
 
         if (!user.isEmailVerified()) {
-            throw new RuntimeException("Email is not verified. Please verify your email first.");
+            throw new EmailNotVerifiedException("Email is not verified. Please verify your email first.");
         }
 
         user.setLastLoginAt(LocalDateTime.now());
@@ -169,6 +166,23 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     private void generateAndSendOtp(User user) {
+        Optional<EmailVerificationOtp> latestOtpOpt = emailVerificationOtpRepository.findTopByUserOrderByCreatedAtDesc(user);
+        if (latestOtpOpt.isPresent()) {
+            EmailVerificationOtp latestOtp = latestOtpOpt.get();
+            if (latestOtp.getCreatedAt() != null && latestOtp.getCreatedAt().isAfter(LocalDateTime.now().minusSeconds(60))) {
+                throw new OtpRateLimitException("Please wait 60 seconds before requesting a new verification code.");
+            }
+        }
+
+        // Invalidate older active OTP records for this user
+        List<EmailVerificationOtp> oldOtps = emailVerificationOtpRepository.findByUserAndVerifiedFalse(user);
+        for (EmailVerificationOtp oldOtp : oldOtps) {
+            oldOtp.setVerified(true); // Deactivate older OTPs so only newest can be used
+        }
+        if (!oldOtps.isEmpty()) {
+            emailVerificationOtpRepository.saveAll(oldOtps);
+        }
+
         String otpCode = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1000000));
 
         EmailVerificationOtp otpEntity = new EmailVerificationOtp();

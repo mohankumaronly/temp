@@ -55,7 +55,7 @@ public class EmailServiceImpl implements EmailService {
             logger.info("Successfully sent OTP email from <{}> to {}", senderEmail, toEmail);
         } catch (Exception e) {
             logger.error("Failed to send OTP email to {}: {}", toEmail, e.getMessage(), e);
-            throw new RuntimeException("Failed to send OTP email: " + e.getMessage(), e);
+            throw new com.rockranger.analyzer.authentication.exception.EmailSendingException("Unable to send verification email. Please try again later.");
         }
     }
 }
