@@ -15,3 +15,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+brevo:
+  smtp:
+    host: ${BREVO_SMTP_HOST}
+    port: ${BREVO_SMTP_PORT}
+    username: ${BREVO_SMTP_USERNAME}
+    password: ${BREVO_SMTP_PASSWORD}
