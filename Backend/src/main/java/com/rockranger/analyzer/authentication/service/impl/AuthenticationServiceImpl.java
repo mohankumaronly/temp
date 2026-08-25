@@ -12,14 +12,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AuthenticationServiceImpl implements AuthenticationService {
+
+    private static final SecureRandom secureRandom = new SecureRandom();
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -172,38 +178,40 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Override
     @Transactional
     public RegisterResponse forgotPassword(ForgotPasswordRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + request.getEmail()));
+        Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
 
-        Optional<PasswordResetOtp> latestResetOpt = passwordResetOtpRepository.findTopByUserOrderByCreatedAtDesc(user);
-        if (latestResetOpt.isPresent()) {
-            PasswordResetOtp latestReset = latestResetOpt.get();
-            if (latestReset.getCreatedAt() != null && latestReset.getCreatedAt().isAfter(LocalDateTime.now().minusSeconds(60))) {
-                throw new OtpRateLimitException("Please wait 60 seconds before requesting a new password reset code.");
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+
+            Optional<PasswordResetOtp> latestResetOpt = passwordResetOtpRepository.findTopByUserOrderByCreatedAtDesc(user);
+            if (latestResetOpt.isPresent()) {
+                PasswordResetOtp latestReset = latestResetOpt.get();
+                if (latestReset.getCreatedAt() != null && latestReset.getCreatedAt().isAfter(LocalDateTime.now().minusSeconds(60))) {
+                    throw new OtpRateLimitException("Please wait 60 seconds before requesting a new password reset code.");
+                }
             }
+
+            List<PasswordResetOtp> oldOtps = passwordResetOtpRepository.findByUserAndVerifiedFalse(user);
+            for (PasswordResetOtp oldOtp : oldOtps) {
+                oldOtp.setVerified(true);
+            }
+            if (!oldOtps.isEmpty()) {
+                passwordResetOtpRepository.saveAll(oldOtps);
+            }
+
+            String otpCode = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1000000));
+
+            PasswordResetOtp resetEntity = new PasswordResetOtp();
+            resetEntity.setUser(user);
+            resetEntity.setOtpHash(passwordEncoder.encode(otpCode));
+            resetEntity.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+            passwordResetOtpRepository.save(resetEntity);
+
+            emailService.sendPasswordResetEmail(user.getEmail(), otpCode);
         }
-
-        // Invalidate older active reset OTPs for this user
-        List<PasswordResetOtp> oldOtps = passwordResetOtpRepository.findByUserAndVerifiedFalse(user);
-        for (PasswordResetOtp oldOtp : oldOtps) {
-            oldOtp.setVerified(true);
-        }
-        if (!oldOtps.isEmpty()) {
-            passwordResetOtpRepository.saveAll(oldOtps);
-        }
-
-        String otpCode = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1000000));
-
-        PasswordResetOtp resetEntity = new PasswordResetOtp();
-        resetEntity.setUser(user);
-        resetEntity.setOtpHash(passwordEncoder.encode(otpCode));
-        resetEntity.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-        passwordResetOtpRepository.save(resetEntity);
-
-        emailService.sendPasswordResetEmail(user.getEmail(), otpCode);
 
         RegisterResponse response = new RegisterResponse();
-        response.setMessage("Password reset code sent successfully to your email.");
+        response.setMessage("If an account exists with that email address, a password reset code has been sent.");
         return response;
     }
 
@@ -240,7 +248,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        // Revoke all existing refresh tokens for security upon password reset
+        // Revoke all active refresh tokens for security upon password reset
         revokeUserRefreshTokens(user);
 
         RegisterResponse response = new RegisterResponse();
@@ -259,23 +267,26 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             throw new InvalidCredentialsException("Refresh token is required.");
         }
 
-        List<RefreshToken> activeTokens = refreshTokenRepository.findAll().stream()
-                .filter(t -> !t.isRevoked() && LocalDateTime.now().isBefore(t.getExpiresAt()))
-                .filter(t -> passwordEncoder.matches(rawToken, t.getTokenHash()))
-                .toList();
+        String tokenHash = hashTokenSha256(rawToken);
 
-        if (activeTokens.isEmpty()) {
-            throw new InvalidCredentialsException("Invalid or expired refresh token. Please login again.");
+        RefreshToken oldToken = refreshTokenRepository.findByTokenHashAndRevokedFalse(tokenHash)
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid or expired refresh token. Please login again."));
+
+        if (LocalDateTime.now().isAfter(oldToken.getExpiresAt())) {
+            oldToken.setRevoked(true);
+            refreshTokenRepository.save(oldToken);
+            throw new InvalidCredentialsException("Refresh token has expired. Please login again.");
         }
 
-        RefreshToken activeToken = activeTokens.get(0);
-        User user = activeToken.getUser();
+        // Explicitly revoke ONLY the old refresh token being rotated
+        oldToken.setRevoked(true);
+        oldToken.setLastUsedAt(LocalDateTime.now());
+        refreshTokenRepository.save(oldToken);
+
+        User user = oldToken.getUser();
 
         String newAccessToken = jwtService.generateToken(user.getEmail());
         String newRefreshToken = createAndSaveRefreshToken(user);
-
-        activeToken.setLastUsedAt(LocalDateTime.now());
-        refreshTokenRepository.save(activeToken);
 
         VerifyOtpResponse response = new VerifyOtpResponse();
         response.setAccessToken(newAccessToken);
@@ -321,13 +332,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     private String createAndSaveRefreshToken(User user) {
-        revokeUserRefreshTokens(user);
-
-        String rawToken = UUID.randomUUID().toString();
+        String rawToken = generateSecureToken();
+        String tokenHash = hashTokenSha256(rawToken);
 
         RefreshToken refreshToken = new RefreshToken();
         refreshToken.setUser(user);
-        refreshToken.setTokenHash(passwordEncoder.encode(rawToken));
+        refreshToken.setTokenHash(tokenHash);
         refreshToken.setExpiresAt(LocalDateTime.now().plusDays(7));
         refreshToken.setRevoked(false);
 
@@ -342,6 +352,28 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
         if (!activeTokens.isEmpty()) {
             refreshTokenRepository.saveAll(activeTokens);
+        }
+    }
+
+    private String generateSecureToken() {
+        byte[] randomBytes = new byte[32]; // 256 bits entropy
+        secureRandom.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private String hashTokenSha256(String rawToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not available", e);
         }
     }
 
