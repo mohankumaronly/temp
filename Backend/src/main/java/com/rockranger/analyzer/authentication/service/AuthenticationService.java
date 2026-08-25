@@ -9,6 +9,7 @@ import com.rockranger.analyzer.authentication.dto.response.VerifyOtpResponse;
 
 public interface AuthenticationService {
     RegisterResponse register(RegisterRequest registerRequest);
+    RegisterResponse requestOtp(String email);
     VerifyOtpResponse verifyOtp(VerifyOtpRequest verifyOtpRequest);
     LoginResponse login(LoginRequest loginRequest);
 }

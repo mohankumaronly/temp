@@ -5,78 +5,187 @@ import com.rockranger.analyzer.authentication.dto.request.RegisterRequest;
 import com.rockranger.analyzer.authentication.dto.request.VerifyOtpRequest;
 import com.rockranger.analyzer.authentication.dto.response.LoginResponse;
 import com.rockranger.analyzer.authentication.dto.response.RegisterResponse;
+import com.rockranger.analyzer.authentication.dto.response.UserResponse;
 import com.rockranger.analyzer.authentication.dto.response.VerifyOtpResponse;
 import com.rockranger.analyzer.authentication.entity.EmailVerificationOtp;
 import com.rockranger.analyzer.authentication.entity.User;
 import com.rockranger.analyzer.authentication.repository.EmailVerificationOtpRepository;
 import com.rockranger.analyzer.authentication.repository.UserRepository;
+import com.rockranger.analyzer.authentication.security.JwtService;
 import com.rockranger.analyzer.authentication.service.AuthenticationService;
+import com.rockranger.analyzer.authentication.service.EmailService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AuthenticationServiceImpl implements AuthenticationService {
 
-    private UserRepository userRepository;
-    private PasswordEncoder passwordEncoder;
-    private EmailVerificationOtpRepository emailVerificationOtpRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmailVerificationOtpRepository emailVerificationOtpRepository;
+    private final EmailService emailService;
+    private final JwtService jwtService;
 
-    public AuthenticationServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, EmailVerificationOtpRepository emailVerificationOtpRepository) {
+    public AuthenticationServiceImpl(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            EmailVerificationOtpRepository emailVerificationOtpRepository,
+            EmailService emailService,
+            JwtService jwtService
+    ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailVerificationOtpRepository = emailVerificationOtpRepository;
+        this.emailService = emailService;
+        this.jwtService = jwtService;
     }
 
     @Override
+    @Transactional
     public RegisterResponse register(RegisterRequest registerRequest) {
+        Optional<User> existingUserOpt = userRepository.findByEmail(registerRequest.getEmail());
 
-        if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            RegisterResponse response = new RegisterResponse();
-            response.setMessage("Email is already registered.");
-            return response;
+        User user;
+        if (existingUserOpt.isPresent()) {
+            user = existingUserOpt.get();
+            if (user.isEmailVerified()) {
+                RegisterResponse response = new RegisterResponse();
+                response.setMessage("Email is already registered.");
+                return response;
+            }
+            if (registerRequest.getFullName() != null && !registerRequest.getFullName().isBlank()) {
+                user.setFullName(registerRequest.getFullName());
+            }
+            if (registerRequest.getPassword() != null && !registerRequest.getPassword().isBlank()) {
+                user.setPasswordHash(passwordEncoder.encode(registerRequest.getPassword()));
+            }
+            userRepository.save(user);
+        } else {
+            user = new User();
+            user.setFullName(registerRequest.getFullName());
+            user.setEmail(registerRequest.getEmail());
+            user.setPasswordHash(passwordEncoder.encode(registerRequest.getPassword()));
+            user.setEmailVerified(false);
+            user = userRepository.save(user);
         }
 
-        User user = new User();
-
-        user.setFullName(registerRequest.getFullName());
-        user.setEmail(registerRequest.getEmail());
-
-        user.setPasswordHash(
-                passwordEncoder.encode(registerRequest.getPassword())
-        );
-
-        userRepository.save(user);
-
-        String otp = String.valueOf(
-                ThreadLocalRandom.current().nextInt(100000, 1000000)
-        );
-
-        System.out.println("OTP for " + user.getEmail() + ": " + otp);
-
-        EmailVerificationOtp otpEntity = new EmailVerificationOtp();
-
-        otpEntity.setUser(user);
-        otpEntity.setOtpHash(passwordEncoder.encode(otp));
-        otpEntity.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-
-        emailVerificationOtpRepository.save(otpEntity);
+        generateAndSendOtp(user);
 
         RegisterResponse response = new RegisterResponse();
-        response.setMessage("OTP has been sent to your email.");
-
+        response.setMessage("Verification code sent successfully to your email.");
         return response;
     }
 
     @Override
-    public VerifyOtpResponse verifyOtp(VerifyOtpRequest verifyOtpRequest) {
-        return null;
+    @Transactional
+    public RegisterResponse requestOtp(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseGet(() -> {
+                    User newUser = new User();
+                    newUser.setEmail(email);
+                    newUser.setFullName(email.split("@")[0]);
+                    newUser.setPasswordHash(passwordEncoder.encode("OauthPass_" + System.currentTimeMillis()));
+                    newUser.setEmailVerified(false);
+                    return userRepository.save(newUser);
+                });
+
+        generateAndSendOtp(user);
+
+        RegisterResponse response = new RegisterResponse();
+        response.setMessage("Verification code sent successfully to your email.");
+        return response;
     }
 
     @Override
+    @Transactional
+    public VerifyOtpResponse verifyOtp(VerifyOtpRequest verifyOtpRequest) {
+        User user = userRepository.findByEmail(verifyOtpRequest.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found with email: " + verifyOtpRequest.getEmail()));
+
+        EmailVerificationOtp otpEntity = emailVerificationOtpRepository.findTopByUserOrderByCreatedAtDesc(user)
+                .orElseThrow(() -> new RuntimeException("No OTP request found for this email."));
+
+        if (otpEntity.isVerified()) {
+            throw new RuntimeException("This OTP has already been verified.");
+        }
+
+        if (LocalDateTime.now().isAfter(otpEntity.getExpiresAt())) {
+            throw new RuntimeException("OTP code has expired. Please request a new code.");
+        }
+
+        if (otpEntity.getAttemptCount() >= 5) {
+            throw new RuntimeException("Maximum OTP verification attempts exceeded. Please request a new code.");
+        }
+
+        if (!passwordEncoder.matches(verifyOtpRequest.getOtp(), otpEntity.getOtpHash())) {
+            otpEntity.setAttemptCount(otpEntity.getAttemptCount() + 1);
+            emailVerificationOtpRepository.save(otpEntity);
+            throw new RuntimeException("Invalid OTP code.");
+        }
+
+        otpEntity.setVerified(true);
+        emailVerificationOtpRepository.save(otpEntity);
+
+        user.setEmailVerified(true);
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        String token = jwtService.generateToken(user.getEmail());
+
+        VerifyOtpResponse response = new VerifyOtpResponse();
+        response.setAccessToken(token);
+        response.setUser(mapToUserResponse(user));
+        return response;
+    }
+
+    @Override
+    @Transactional
     public LoginResponse login(LoginRequest loginRequest) {
-        return null;
+        User user = userRepository.findByEmail(loginRequest.getEmail())
+                .orElseThrow(() -> new RuntimeException("Invalid email or password."));
+
+        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
+            throw new RuntimeException("Invalid email or password.");
+        }
+
+        if (!user.isEmailVerified()) {
+            throw new RuntimeException("Email is not verified. Please verify your email first.");
+        }
+
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        String token = jwtService.generateToken(user.getEmail());
+
+        LoginResponse response = new LoginResponse();
+        response.setAccessToken(token);
+        response.setUser(mapToUserResponse(user));
+        return response;
+    }
+
+    private void generateAndSendOtp(User user) {
+        String otpCode = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1000000));
+
+        EmailVerificationOtp otpEntity = new EmailVerificationOtp();
+        otpEntity.setUser(user);
+        otpEntity.setOtpHash(passwordEncoder.encode(otpCode));
+        otpEntity.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        emailVerificationOtpRepository.save(otpEntity);
+
+        emailService.sendOtpEmail(user.getEmail(), otpCode);
+    }
+
+    private UserResponse mapToUserResponse(User user) {
+        UserResponse response = new UserResponse();
+        response.setId(user.getId());
+        response.setFullName(user.getFullName());
+        response.setEmail(user.getEmail());
+        response.setEmailVerified(user.isEmailVerified());
+        return response;
     }
 }

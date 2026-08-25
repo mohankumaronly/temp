@@ -1,0 +1,266 @@
+{
+	"info": {
+		"_postman_id": "8f3b4c10-91a2-4d5e-b873-123456789abc",
+		"name": "Authentication API Collection",
+		"description": "Complete Postman Collection for testing Spring Boot Authentication Endpoints including OTP Email verification, Login, JWT authentication, User Profile, and Logout.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "testEmail",
+			"value": "testuser@example.com",
+			"type": "string"
+		},
+		{
+			"key": "testPassword",
+			"value": "Password123!",
+			"type": "string"
+		},
+		{
+			"key": "otpCode",
+			"value": "123456",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/health",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"health"
+					]
+				},
+				"description": "Checks if the backend authentication server is running."
+			},
+			"response": []
+		},
+		{
+			"name": "2. Register User (Send OTP Email)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"fullName\": \"John Doe\",\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/register",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"register"
+					]
+				},
+				"description": "Registers a new user and sends a 6-digit OTP code to their email via Brevo SMTP."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Request / Resend OTP",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{testEmail}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/otp/request",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"otp",
+						"request"
+					]
+				},
+				"description": "Requests a new OTP email for the specified email address."
+			},
+			"response": []
+		},
+		{
+			"name": "4. Verify OTP & Authenticate",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.accessToken) {",
+							"    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+							"    console.log('Saved accessToken to collection variables');",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"code\": \"{{otpCode}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/otp/verify",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"otp",
+						"verify"
+					]
+				},
+				"description": "Validates the 6-digit OTP received via email, marks email as verified, returns JWT access token, and sets HttpOnly JWT cookie."
+			},
+			"response": []
+		},
+		{
+			"name": "5. User Login",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.accessToken) {",
+							"    pm.collectionVariables.set('accessToken', jsonData.accessToken);",
+							"    console.log('Saved accessToken to collection variables');",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/login",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"login"
+					]
+				},
+				"description": "Authenticates an existing verified user with email and password."
+			},
+			"response": []
+		},
+		{
+			"name": "6. Get User Profile (/users/me)",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/users/me",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"users",
+						"me"
+					]
+				},
+				"description": "Protected endpoint that returns current logged-in user details using JWT Bearer token or HttpOnly Cookie."
+			},
+			"response": []
+		},
+		{
+			"name": "7. User Logout",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/auth/logout",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"logout"
+					]
+				},
+				"description": "Clears the HttpOnly JWT session cookie."
+			},
+			"response": []
+		}
+	]
+}
