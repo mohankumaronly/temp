@@ -107,6 +107,22 @@ public class Resume {
         this.createdAt = createdAt;
     }
 
+    @OneToOne(
+            mappedBy = "resume",
+            fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    private ResumeParsedData parsedData;
+
+    public ResumeParsedData getParsedData() {
+        return parsedData;
+    }
+
+    public void setParsedData(ResumeParsedData parsedData) {
+        this.parsedData = parsedData;
+    }
+
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }

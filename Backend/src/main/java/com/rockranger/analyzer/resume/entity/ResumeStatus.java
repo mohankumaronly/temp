@@ -4,6 +4,7 @@ public enum ResumeStatus {
 
     UPLOADED,
     EXTRACTING,
+    PARSING,
     COMPLETED,
     FAILED
 }
