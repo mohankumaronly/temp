@@ -5,4 +5,6 @@ import org.springframework.web.multipart.MultipartFile;
 public interface ResumeStorageService {
 
     String upload(MultipartFile file);
+
+    byte[] download(String cloudinaryUrl);
 }

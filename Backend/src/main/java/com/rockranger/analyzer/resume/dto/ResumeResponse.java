@@ -1,54 +1,41 @@
-package com.rockranger.analyzer.resume.entity;
+package com.rockranger.analyzer.resume.dto;
 
-import com.rockranger.analyzer.authentication.entity.User;
-import jakarta.persistence.*;
+import com.rockranger.analyzer.resume.entity.Resume;
+import com.rockranger.analyzer.resume.entity.ResumeStatus;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "resumes")
-public class Resume {
+public class ResumeResponse {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(name = "original_file_name", nullable = false)
+    private Long userId;
     private String originalFileName;
-
-    @Column(name = "cloudinary_url", nullable = false, length = 1000)
     private String cloudinaryUrl;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private ResumeStatus status;
-
-    @Lob
-    @Column(name = "extracted_text", columnDefinition = "LONGTEXT")
     private String extractedText;
-
-    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
-
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        status = ResumeStatus.UPLOADED;
+    public ResumeResponse() {
     }
 
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
+    public static ResumeResponse fromEntity(Resume resume) {
+        if (resume == null) {
+            return null;
+        }
 
-    public Resume() {
+        ResumeResponse dto = new ResumeResponse();
+        dto.setId(resume.getId());
+        if (resume.getUser() != null) {
+            dto.setUserId(resume.getUser().getId());
+        }
+        dto.setOriginalFileName(resume.getOriginalFileName());
+        dto.setCloudinaryUrl(resume.getCloudinaryUrl());
+        dto.setStatus(resume.getStatus());
+        dto.setExtractedText(resume.getExtractedText());
+        dto.setCreatedAt(resume.getCreatedAt());
+        dto.setUpdatedAt(resume.getUpdatedAt());
+        return dto;
     }
 
     public Long getId() {
@@ -59,12 +46,12 @@ public class Resume {
         this.id = id;
     }
 
-    public User getUser() {
-        return user;
+    public Long getUserId() {
+        return userId;
     }
 
-    public void setUser(User user) {
-        this.user = user;
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
 
     public String getOriginalFileName() {

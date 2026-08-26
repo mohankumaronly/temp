@@ -40,6 +40,16 @@
 			"key": "refreshToken",
 			"value": "",
 			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "resumeId",
+			"value": "1",
+			"type": "string"
 		}
 	],
 	"item": [
@@ -396,6 +406,99 @@
 					]
 				},
 				"description": "Revokes active refresh tokens in database and clears session cookies."
+			},
+			"response": []
+		},
+		{
+			"name": "11. Upload Resume PDF (Phase 1)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.id) {",
+							"    pm.collectionVariables.set('resumeId', jsonData.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": []
+						},
+						{
+							"key": "userId",
+							"value": "{{userId}}",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/upload",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"upload"
+					]
+				},
+				"description": "Uploads a PDF resume file. Validates PDF format, uploads original PDF to Cloudinary, extracts text via Apache PDFBox, and stores extracted text & status COMPLETED in MySQL."
+			},
+			"response": []
+		},
+		{
+			"name": "12. Get Resume by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/{{resumeId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"{{resumeId}}"
+					]
+				},
+				"description": "Fetches a stored resume record by ID, including its Cloudinary URL, status, and extracted text."
+			},
+			"response": []
+		},
+		{
+			"name": "13. Get Resumes by User ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/user/{{userId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"user",
+						"{{userId}}"
+					]
+				},
+				"description": "Fetches all stored resumes for a specific user ID."
 			},
 			"response": []
 		}
