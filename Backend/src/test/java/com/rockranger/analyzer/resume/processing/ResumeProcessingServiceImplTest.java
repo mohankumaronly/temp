@@ -70,4 +70,17 @@ class ResumeProcessingServiceImplTest {
         assertEquals(ResumeStatus.FAILED, resume.getStatus());
         verify(resumeRepository, times(2)).save(resume);
     }
+
+    @Test
+    void testProcessUploadedResumes() {
+        when(resumeRepository.findByStatus(ResumeStatus.UPLOADED)).thenReturn(java.util.List.of(resume));
+        when(resumeRepository.findById(10L)).thenReturn(java.util.Optional.of(resume));
+        byte[] mockBytes = "pdf data".getBytes();
+        when(resumeStorageService.download(resume.getCloudinaryUrl())).thenReturn(mockBytes);
+        when(resumeTextExtractionService.extractText(mockBytes)).thenReturn("Mohan Kumar");
+
+        java.util.List<Resume> processed = resumeProcessingService.processUploadedResumes();
+        assertEquals(1, processed.size());
+        assertEquals(ResumeStatus.COMPLETED, processed.get(0).getStatus());
+    }
 }

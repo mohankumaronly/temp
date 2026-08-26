@@ -1,8 +1,8 @@
 {
 	"info": {
 		"_postman_id": "8f3b4c10-91a2-4d5e-b873-123456789abc",
-		"name": "Authentication API Collection",
-		"description": "Complete Postman Collection for testing Spring Boot Authentication Endpoints including OTP Email verification, Login, JWT authentication, User Profile, Logout, Forgot Password, Reset Password, and Token Refresh.",
+		"name": "Resume Analyzer & Authentication API Collection",
+		"description": "Complete Postman Collection for testing Spring Boot Authentication & Resume Processing Endpoints including OTP Email verification, Login, JWT authentication, Resume Uploads, Text Extraction, and Status Tracking.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -396,6 +396,140 @@
 					]
 				},
 				"description": "Revokes active refresh tokens in database and clears session cookies."
+			},
+			"response": []
+		},
+		{
+			"name": "11. Upload Resumes",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "files",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/upload",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"upload"
+					]
+				},
+				"description": "Uploads one or multiple PDF resume files to Cloudinary and saves metadata as UPLOADED in MySQL."
+			},
+			"response": []
+		},
+		{
+			"name": "12. Process Uploaded Resumes (Text Extraction)",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/process",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"process"
+					]
+				},
+				"description": "Finds all UPLOADED resumes in database, downloads PDFs from Cloudinary, extracts text using PDFBox, and updates status to COMPLETED."
+			},
+			"response": []
+		},
+		{
+			"name": "13. Get My Resumes",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/my",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"my"
+					]
+				},
+				"description": "Gets all uploaded resumes belonging to the currently authenticated user."
+			},
+			"response": []
+		},
+		{
+			"name": "14. Get Resume by ID",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/resumes/1",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"v1",
+						"resumes",
+						"1"
+					]
+				},
+				"description": "Gets single resume details including extracted text and status by ID for the logged-in user."
 			},
 			"response": []
 		}

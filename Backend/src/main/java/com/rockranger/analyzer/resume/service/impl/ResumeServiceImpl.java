@@ -4,7 +4,6 @@ import com.rockranger.analyzer.authentication.entity.User;
 import com.rockranger.analyzer.authentication.repository.UserRepository;
 import com.rockranger.analyzer.resume.entity.Resume;
 import com.rockranger.analyzer.resume.entity.ResumeStatus;
-import com.rockranger.analyzer.resume.processing.ResumeProcessingService;
 import com.rockranger.analyzer.resume.repository.ResumeRepository;
 import com.rockranger.analyzer.resume.service.ResumeService;
 import com.rockranger.analyzer.resume.storage.ResumeStorageService;
@@ -18,73 +17,79 @@ public class ResumeServiceImpl implements ResumeService {
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
     private final ResumeStorageService resumeStorageService;
-    private final ResumeProcessingService resumeProcessingService;
 
     public ResumeServiceImpl(
             ResumeRepository resumeRepository,
             UserRepository userRepository,
-            ResumeStorageService resumeStorageService,
-            ResumeProcessingService resumeProcessingService
+            ResumeStorageService resumeStorageService
     ) {
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
         this.resumeStorageService = resumeStorageService;
-        this.resumeProcessingService = resumeProcessingService;
     }
 
     @Override
-    public Resume uploadResume(MultipartFile file, Long userId) {
+    @Transactional
+    public java.util.List<Resume> uploadResumes(java.util.List<MultipartFile> files, String email) {
 
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("Resume file cannot be empty.");
+        if (files == null || files.isEmpty()) {
+            throw new IllegalArgumentException("At least one resume is required.");
         }
 
-        String originalFilename = file.getOriginalFilename();
-        String contentType = file.getContentType();
-        boolean isPdfByExtension = originalFilename != null && originalFilename.toLowerCase().endsWith(".pdf");
-        boolean isPdfByContentType = contentType != null && (contentType.equalsIgnoreCase("application/pdf") || contentType.equalsIgnoreCase("application/x-pdf"));
-
-        if (!isPdfByExtension && !isPdfByContentType) {
-            throw new IllegalArgumentException("Only PDF resumes are supported.");
-        }
-
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found with id: " + userId)
+                        new RuntimeException("User not found.")
                 );
 
-        // 1. Upload PDF to Cloudinary
-        String cloudinaryUrl = resumeStorageService.upload(file);
+        java.util.List<Resume> uploadedResumes = new java.util.ArrayList<>();
 
-        // 2. Create Resume record
-        Resume resume = new Resume();
+        for (MultipartFile file : files) {
 
-        resume.setUser(user);
-        resume.setOriginalFileName(originalFilename != null ? originalFilename : "resume.pdf");
-        resume.setCloudinaryUrl(cloudinaryUrl);
-        resume.setStatus(ResumeStatus.UPLOADED);
+            if (file == null || file.isEmpty()) {
+                throw new IllegalArgumentException("Resume file cannot be empty.");
+            }
 
-        // 3. Save resume metadata in MySQL
-        resume = resumeRepository.save(resume);
+            String originalFilename = file.getOriginalFilename();
+            String contentType = file.getContentType();
+            boolean isPdfByExtension = originalFilename != null && originalFilename.toLowerCase().endsWith(".pdf");
+            boolean isPdfByContentType = contentType != null && (contentType.equalsIgnoreCase("application/pdf") || contentType.equalsIgnoreCase("application/x-pdf"));
 
-        // 4. Download from Cloudinary → PDFBox → extract text → MySQL
-        resumeProcessingService.process(resume.getId());
+            if (!isPdfByExtension && !isPdfByContentType) {
+                throw new IllegalArgumentException("Only PDF resumes are supported: " + originalFilename);
+            }
 
-        // 5. Fetch and return latest state from MySQL
-        return resumeRepository.findById(resume.getId())
-                .orElse(resume);
+            // 1. Upload PDF to Cloudinary
+            String cloudinaryUrl = resumeStorageService.upload(file);
+
+            // 2. Create Resume record
+            Resume resume = new Resume();
+
+            resume.setUser(user);
+            resume.setOriginalFileName(originalFilename != null ? originalFilename : "resume.pdf");
+            resume.setCloudinaryUrl(cloudinaryUrl);
+            resume.setStatus(ResumeStatus.UPLOADED);
+
+            // 3. Save resume metadata in MySQL
+            resume = resumeRepository.save(resume);
+
+            uploadedResumes.add(resume);
+        }
+
+        return uploadedResumes;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Resume getResumeById(Long id) {
-        return resumeRepository.findById(id)
+    public Resume getResumeById(Long id, String email) {
+        return resumeRepository.findByIdAndUserEmail(id, email)
                 .orElseThrow(() -> new RuntimeException("Resume not found with id: " + id));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public java.util.List<Resume> getResumesByUserId(Long userId) {
-        return resumeRepository.findByUserId(userId);
+    public java.util.List<Resume> getResumesByUserEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found with email: " + email));
+        return resumeRepository.findByUserId(user.getId());
     }
 }

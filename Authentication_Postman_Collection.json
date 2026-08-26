@@ -410,36 +410,32 @@
 			"response": []
 		},
 		{
-			"name": "11. Upload Resume PDF (Phase 1)",
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"exec": [
-							"var jsonData = pm.response.json();",
-							"if (jsonData.id) {",
-							"    pm.collectionVariables.set('resumeId', jsonData.id);",
-							"}"
-						],
-						"type": "text/javascript"
-					}
-				}
-			],
+			"name": "11. Upload Resumes (Multi PDF Upload)",
 			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
 				"method": "POST",
 				"header": [],
 				"body": {
 					"mode": "formdata",
 					"formdata": [
 						{
-							"key": "file",
+							"key": "files",
 							"type": "file",
 							"src": []
 						},
 						{
-							"key": "userId",
-							"value": "{{userId}}",
-							"type": "text"
+							"key": "files",
+							"type": "file",
+							"src": []
 						}
 					]
 				},
@@ -455,7 +451,7 @@
 						"upload"
 					]
 				},
-				"description": "Uploads a PDF resume file. Validates PDF format, uploads original PDF to Cloudinary, extracts text via Apache PDFBox, and stores extracted text & status COMPLETED in MySQL."
+				"description": "Uploads one or multiple PDF resume files using Bearer JWT authentication. Extracts user email from token."
 			},
 			"response": []
 		},

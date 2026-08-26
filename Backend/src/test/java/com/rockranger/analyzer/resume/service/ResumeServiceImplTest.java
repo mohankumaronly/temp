@@ -34,9 +34,6 @@ class ResumeServiceImplTest {
     @Mock
     private ResumeStorageService resumeStorageService;
 
-    @Mock
-    private ResumeProcessingService resumeProcessingService;
-
     @InjectMocks
     private ResumeServiceImpl resumeService;
 
@@ -59,7 +56,7 @@ class ResumeServiceImplTest {
                 "dummy pdf content".getBytes()
         );
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
         when(resumeStorageService.upload(file)).thenReturn("https://res.cloudinary.com/demo/raw/upload/v1/resumes/Mohan.pdf");
         when(resumeRepository.save(any(Resume.class))).thenAnswer(invocation -> {
             Resume r = invocation.getArgument(0);
@@ -67,24 +64,42 @@ class ResumeServiceImplTest {
             return r;
         });
 
-        when(resumeRepository.findById(10L)).thenAnswer(invocation -> {
-            Resume r = new Resume();
-            r.setId(10L);
-            r.setUser(testUser);
-            r.setOriginalFileName("Mohan.pdf");
-            r.setCloudinaryUrl("https://res.cloudinary.com/demo/raw/upload/v1/resumes/Mohan.pdf");
-            r.setStatus(ResumeStatus.COMPLETED);
-            return Optional.of(r);
-        });
+        java.util.List<Resume> result = resumeService.uploadResumes(java.util.List.of(file), "test@example.com");
 
-        Resume result = resumeService.uploadResume(file, 1L);
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(10L, result.get(0).getId());
+        assertEquals("Mohan.pdf", result.get(0).getOriginalFileName());
+        assertEquals("https://res.cloudinary.com/demo/raw/upload/v1/resumes/Mohan.pdf", result.get(0).getCloudinaryUrl());
+        assertEquals(ResumeStatus.UPLOADED, result.get(0).getStatus());
+    }
 
+    @Test
+    void testGetResumeById() {
+        Resume r = new Resume();
+        r.setId(10L);
+        r.setUser(testUser);
+        r.setOriginalFileName("Mohan.pdf");
+        when(resumeRepository.findByIdAndUserEmail(10L, "test@example.com")).thenReturn(Optional.of(r));
+
+        Resume result = resumeService.getResumeById(10L, "test@example.com");
         assertNotNull(result);
         assertEquals(10L, result.getId());
         assertEquals("Mohan.pdf", result.getOriginalFileName());
-        assertEquals("https://res.cloudinary.com/demo/raw/upload/v1/resumes/Mohan.pdf", result.getCloudinaryUrl());
-        assertEquals(ResumeStatus.COMPLETED, result.getStatus());
-        verify(resumeProcessingService, times(1)).process(10L);
+    }
+
+    @Test
+    void testGetResumesByUserEmail() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        Resume r = new Resume();
+        r.setId(10L);
+        r.setUser(testUser);
+        r.setOriginalFileName("Mohan.pdf");
+        when(resumeRepository.findByUserId(1L)).thenReturn(java.util.List.of(r));
+
+        java.util.List<Resume> list = resumeService.getResumesByUserEmail("test@example.com");
+        assertEquals(1, list.size());
+        assertEquals("Mohan.pdf", list.get(0).getOriginalFileName());
     }
 
     @Test
@@ -96,6 +111,8 @@ class ResumeServiceImplTest {
                 "dummy content".getBytes()
         );
 
-        assertThrows(IllegalArgumentException.class, () -> resumeService.uploadResume(file, 1L));
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+
+        assertThrows(IllegalArgumentException.class, () -> resumeService.uploadResumes(java.util.List.of(file), "test@example.com"));
     }
 }
