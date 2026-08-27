@@ -29,13 +29,14 @@ spring:
             enable: true
 
 jwt:
-  secret: ${JWT_SECRET:9a4f2c8d7b6e5a4f3c2b1a0d9e8f7c6b5a4f3c2b1a0d9e8f7c6b5a4f3c2b1a0d}
+  secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
 app:
   email:
     sender: ${BREVO_SENDER_EMAIL:rockrangerz801@gmail.com}
     sender-name: ${BREVO_SENDER_NAME:Resume Analyzer}
+
   cookie:
     secure: ${COOKIE_SECURE:false}
     same-site: ${COOKIE_SAME_SITE:Lax}
@@ -47,8 +48,14 @@ app:
     api-key: ${CLOUDINARY_API_KEY}
     api-secret: ${CLOUDINARY_API_SECRET}
 
-groq:
+# Groq disabled for local development
+# groq:
+#   api:
+#     key: ${GROQ_API_KEY}
+#     url: ${GROQ_API_URL}
+#     model: ${GROQ_API_MODEL}
+
+ollama:
   api:
-    key: ${GROQ_API_KEY}
-    url: ${GROQ_API_URL}
-    model: ${GROQ_API_MODEL}
+    url: ${OLLAMA_API_URL:http://localhost:11434/api/chat}
+    model: ${OLLAMA_API_MODEL:llama3.2:3b}

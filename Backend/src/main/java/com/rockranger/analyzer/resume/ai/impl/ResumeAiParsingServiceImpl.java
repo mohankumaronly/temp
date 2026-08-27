@@ -7,7 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -23,45 +23,62 @@ public class ResumeAiParsingServiceImpl implements ResumeAiParsingService {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
+
     private final String apiUrl;
     private final String model;
 
     @Autowired
     public ResumeAiParsingServiceImpl(
-            @Value("${groq.api.key}") String apiKey,
-            @Value("${groq.api.url}") String apiUrl,
-            @Value("${groq.api.model}") String model
+            @Value("${ollama.api.url}") String apiUrl,
+            @Value("${ollama.api.model}") String model
     ) {
+
         this.objectMapper = new ObjectMapper();
-        this.apiKey = apiKey;
+
         this.apiUrl = apiUrl;
         this.model = model;
+
         this.restClient = RestClient.builder().build();
 
-        log.info("Groq configuration loaded");
-        log.info("Groq URL: {}", apiUrl);
-        log.info("Groq model: {}", model);
-        log.info(
-                "Groq API key configured: {}",
-                apiKey != null && !apiKey.isBlank()
-        );
+        // Production:
+        // Log configuration information, but NEVER log API keys,
+        // resume text, personal information, or complete AI responses.
+        log.info("Ollama configuration loaded");
+        log.info("Ollama URL: {}", apiUrl);
+        log.info("Ollama model: {}", model);
     }
 
     @Override
     public String parseResume(String extractedText) {
 
+        // Validate input before sending anything to the AI model.
         if (extractedText == null || extractedText.isBlank()) {
+
             throw new IllegalArgumentException(
                     "Resume extracted text cannot be empty."
             );
         }
 
+        /*
+         * Production:
+         *
+         * Do not log the actual resume text.
+         * Resume data contains personal information.
+         *
+         * Logging only the length is safe and useful for debugging.
+         */
         log.info(
-                "Starting Groq resume parsing. Extracted text length: {}",
+                "Starting resume AI parsing. Extracted text length: {}",
                 extractedText.length()
         );
 
+        /*
+         * System prompt defines the contract between our application
+         * and the AI model.
+         *
+         * Production:
+         * Keep this prompt centralized/versioned if it becomes large.
+         */
         String systemPrompt = """
                 You are a resume parsing system.
 
@@ -104,110 +121,199 @@ public class ResumeAiParsingServiceImpl implements ResumeAiParsingService {
                 %s
                 """.formatted(extractedText);
 
+        /*
+         * Ollama /api/chat request.
+         *
+         * Unlike Groq/OpenAI-compatible APIs, Ollama does not require
+         * an Authorization header for a local server.
+         */
         Map<String, Object> requestBody = Map.of(
+
                 "model", model,
+
+                /*
+                 * Production:
+                 * temperature = 0 makes structured extraction
+                 * more deterministic.
+                 */
                 "temperature", 0,
+
+                /*
+                 * Ask Ollama to return JSON.
+                 */
+                "format", "json",
+
+                /*
+                 * Prevent unnecessary conversation history.
+                 */
+                "stream", false,
+
                 "messages", List.of(
+
                         Map.of(
                                 "role", "system",
                                 "content", systemPrompt
                         ),
+
                         Map.of(
                                 "role", "user",
                                 "content", userPrompt
                         )
-                ),
-                "response_format", Map.of(
-                        "type", "json_object"
                 )
         );
 
         try {
 
-            log.info("Sending request to Groq...");
-            log.debug("Groq endpoint: {}", apiUrl);
-            log.debug("Groq model: {}", model);
+            log.info(
+                    "Sending resume to Ollama. Model: {}",
+                    model
+            );
 
+            log.debug(
+                    "Ollama endpoint: {}",
+                    apiUrl
+            );
+
+            /*
+             * Call local Ollama server.
+             *
+             * apiUrl should be:
+             *
+             * http://localhost:11434/api/chat
+             */
             String response = restClient.post()
+
                     .uri(apiUrl)
-                    .header(
-                            HttpHeaders.AUTHORIZATION,
-                            "Bearer " + apiKey
-                    )
+
                     .contentType(MediaType.APPLICATION_JSON)
+
                     .body(requestBody)
+
                     .retrieve()
+
                     .body(String.class);
 
-            log.info("Groq request successful.");
+            log.info("Ollama request completed successfully.");
 
+            /*
+             * Validate HTTP response body.
+             */
             if (response == null || response.isBlank()) {
+
                 throw new RuntimeException(
-                        "Groq returned an empty HTTP response."
+                        "Ollama returned an empty HTTP response."
                 );
             }
 
-            log.debug("Raw Groq response: {}", response);
+            /*
+             * IMPORTANT:
+             *
+             * Do not log the entire response in production.
+             *
+             * It may contain:
+             * - name
+             * - email
+             * - phone
+             * - experience
+             * - resume information
+             *
+             * Therefore we only log the response size.
+             */
+            log.debug(
+                    "Ollama response length: {}",
+                    response.length()
+            );
 
-            JsonNode root = objectMapper.readTree(response);
+            /*
+             * Parse Ollama response.
+             *
+             * Expected structure:
+             *
+             * {
+             *   "message": {
+             *      "role": "assistant",
+             *      "content": "{ ...JSON... }"
+             *   }
+             * }
+             */
+            JsonNode root =
+                    objectMapper.readTree(response);
 
-            JsonNode content = root
-                    .path("choices")
-                    .path(0)
-                    .path("message")
-                    .path("content");
+            JsonNode content =
+                    root.path("message")
+                            .path("content");
 
+            /*
+             * Validate AI response.
+             */
             if (content.isMissingNode()
                     || content.isNull()
                     || content.asText().isBlank()) {
 
                 log.error(
-                        "Groq response does not contain choices[0].message.content"
+                        "Ollama response does not contain message.content"
                 );
 
                 throw new RuntimeException(
-                        "Groq returned an empty AI content response."
+                        "Ollama returned an empty AI content response."
                 );
             }
 
             String json = content.asText();
 
             log.info(
-                    "Groq returned parsed JSON. Length: {}",
+                    "Ollama returned parsed JSON. Length: {}",
                     json.length()
             );
 
-            // Validate returned JSON
+            /*
+             * VERY IMPORTANT:
+             *
+             * Never directly trust AI output.
+             *
+             * Validate that the returned content is actually
+             * valid JSON before storing it in MySQL.
+             */
             objectMapper.readTree(json);
 
-            log.info("Groq JSON validation successful.");
+            log.info(
+                    "Ollama JSON validation successful."
+            );
 
             return json;
 
         } catch (RestClientResponseException e) {
 
+            /*
+             * Production:
+             *
+             * Log HTTP status and a safe error message.
+             * Avoid logging sensitive request data.
+             */
             log.error(
-                    "Groq HTTP error. Status: {}, Response: {}",
+                    "Ollama HTTP error. Status: {}",
                     e.getStatusCode(),
-                    e.getResponseBodyAsString(),
                     e
             );
 
             throw new RuntimeException(
-                    "Groq API request failed. HTTP status: "
+                    "Ollama API request failed. HTTP status: "
                             + e.getStatusCode(),
                     e
             );
 
         } catch (Exception e) {
 
+            /*
+             * Catch parsing/connection/JSON errors.
+             */
             log.error(
-                    "Unexpected error while parsing resume with Groq AI",
+                    "Unexpected error while parsing resume with Ollama AI",
                     e
             );
 
             throw new RuntimeException(
-                    "Failed to parse resume using Groq AI.",
+                    "Failed to parse resume using Ollama AI.",
                     e
             );
         }
