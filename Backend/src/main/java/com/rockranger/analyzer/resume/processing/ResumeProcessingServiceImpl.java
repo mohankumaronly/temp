@@ -4,106 +4,142 @@ import com.rockranger.analyzer.resume.ai.ResumeAiParsingService;
 import com.rockranger.analyzer.resume.entity.Resume;
 import com.rockranger.analyzer.resume.entity.ResumeParsedData;
 import com.rockranger.analyzer.resume.entity.ResumeStatus;
-import com.rockranger.analyzer.resume.extraction.ResumeTextExtractionService;
+import com.rockranger.analyzer.resume.extraction.ResumeExtractionRouter;
 import com.rockranger.analyzer.resume.repository.ResumeParsedDataRepository;
 import com.rockranger.analyzer.resume.repository.ResumeRepository;
 import com.rockranger.analyzer.resume.storage.ResumeStorageService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
-public class ResumeProcessingServiceImpl implements ResumeProcessingService {
+public class ResumeProcessingServiceImpl
+        implements ResumeProcessingService {
 
     private static final Logger log =
-            LoggerFactory.getLogger(ResumeProcessingServiceImpl.class);
+            LoggerFactory.getLogger(
+                    ResumeProcessingServiceImpl.class
+            );
 
     private final ResumeStorageService resumeStorageService;
-    private final ResumeTextExtractionService resumeTextExtractionService;
+    private final ResumeExtractionRouter resumeExtractionRouter;
     private final ResumeRepository resumeRepository;
     private final ResumeAiParsingService resumeAiParsingService;
     private final ResumeParsedDataRepository resumeParsedDataRepository;
 
+
     public ResumeProcessingServiceImpl(
             ResumeStorageService resumeStorageService,
-            ResumeTextExtractionService resumeTextExtractionService,
+            ResumeExtractionRouter resumeExtractionRouter,
             ResumeRepository resumeRepository,
             ResumeAiParsingService resumeAiParsingService,
             ResumeParsedDataRepository resumeParsedDataRepository
     ) {
+
         this.resumeStorageService = resumeStorageService;
-        this.resumeTextExtractionService = resumeTextExtractionService;
+        this.resumeExtractionRouter = resumeExtractionRouter;
         this.resumeRepository = resumeRepository;
         this.resumeAiParsingService = resumeAiParsingService;
-        this.resumeParsedDataRepository = resumeParsedDataRepository;
+        this.resumeParsedDataRepository =
+                resumeParsedDataRepository;
     }
+
+
+    // =========================================================
+    // PROCESS SINGLE RESUME OBJECT
+    // =========================================================
 
     @Override
     @Transactional
     public void process(Resume resume) {
 
         if (resume == null || resume.getId() == null) {
-            log.error("Resume or Resume ID is null");
+
             throw new IllegalArgumentException(
                     "Resume and Resume ID cannot be null."
             );
         }
 
         log.info(
-                "Starting resume processing. Resume ID: {}, File: {}",
-                resume.getId(),
-                resume.getOriginalFileName()
+                "Starting processing for Resume ID: {}",
+                resume.getId()
         );
 
         process(resume.getId());
     }
 
+
+    // =========================================================
+    // PROCESS SINGLE RESUME BY ID
+    // =========================================================
+
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(Long resumeId) {
 
-        log.info("========== RESUME PROCESSING STARTED ==========");
-        log.info("Resume ID: {}", resumeId);
+        if (resumeId == null) {
 
-        Resume resume = resumeRepository.findById(resumeId)
-                .orElseThrow(() -> {
-                    log.error("Resume not found with ID: {}", resumeId);
-                    return new RuntimeException(
-                            "Resume not found with id: " + resumeId
-                    );
-                });
+            throw new IllegalArgumentException(
+                    "Resume ID cannot be null."
+            );
+        }
 
         log.info(
-                "Resume loaded successfully. ID: {}, File: {}, Current Status: {}",
-                resume.getId(),
-                resume.getOriginalFileName(),
-                resume.getStatus()
+                "========== RESUME PROCESSING STARTED =========="
         );
+
+        log.info(
+                "Resume ID: {}",
+                resumeId
+        );
+
+
+        Resume resume =
+                resumeRepository.findById(resumeId)
+                        .orElseThrow(() -> {
+
+                            log.error(
+                                    "Resume not found with ID: {}",
+                                    resumeId
+                            );
+
+                            return new RuntimeException(
+                                    "Resume not found with id: "
+                                            + resumeId
+                            );
+                        });
+
 
         try {
 
-            // =========================================================
-            // STEP 1: Mark as EXTRACTING
-            // =========================================================
+            // =====================================================
+            // STEP 1 — EXTRACTING
+            // =====================================================
 
-            log.info("[STEP 1] Marking resume {} as EXTRACTING", resumeId);
+            log.info(
+                    "[STEP 1] Resume {} → EXTRACTING",
+                    resumeId
+            );
 
-            resume.setStatus(ResumeStatus.EXTRACTING);
+            resume.setStatus(
+                    ResumeStatus.EXTRACTING
+            );
+
             resumeRepository.save(resume);
 
-            log.info("[STEP 1] Resume status updated to EXTRACTING");
 
+            // =====================================================
+            // STEP 2 — DOWNLOAD FILE
+            // =====================================================
 
-            // =========================================================
-            // STEP 2: Download PDF
-            // =========================================================
-
-            log.info("[STEP 2] Downloading PDF from Cloudinary");
-            log.debug(
-                    "[STEP 2] Cloudinary URL: {}",
-                    resume.getCloudinaryUrl()
+            log.info(
+                    "[STEP 2] Downloading resume file"
             );
 
             byte[] fileBytes =
@@ -111,26 +147,35 @@ public class ResumeProcessingServiceImpl implements ResumeProcessingService {
                             resume.getCloudinaryUrl()
                     );
 
+            if (fileBytes == null || fileBytes.length == 0) {
+
+                throw new IllegalStateException(
+                        "Downloaded resume file is empty."
+                );
+            }
+
             log.info(
-                    "[STEP 2] PDF downloaded successfully. Size: {} bytes",
-                    fileBytes != null ? fileBytes.length : 0
+                    "[STEP 2] Download successful. Size: {} bytes",
+                    fileBytes.length
             );
 
 
-            // =========================================================
-            // STEP 3: Extract text
-            // =========================================================
+            // =====================================================
+            // STEP 3 — TEXT EXTRACTION
+            // =====================================================
 
-            log.info("[STEP 3] Starting PDF text extraction");
+            log.info(
+                    "[STEP 3] Starting text extraction"
+            );
 
             String extractedText =
-                    resumeTextExtractionService.extractText(fileBytes);
+                    resumeExtractionRouter.extract(
+                            fileBytes,
+                            resume.getOriginalFileName()
+                    );
 
-            log.info("[STEP 3] PDF text extraction completed");
-
-            if (extractedText == null) {
-
-                log.error("[STEP 3] Extracted text is NULL");
+            if (extractedText == null
+                    || extractedText.isBlank()) {
 
                 throw new IllegalStateException(
                         "No text could be extracted from the resume."
@@ -138,159 +183,105 @@ public class ResumeProcessingServiceImpl implements ResumeProcessingService {
             }
 
             log.info(
-                    "[STEP 3] Extracted text length: {} characters",
+                    "[STEP 3] Text extraction successful. Length: {}",
                     extractedText.length()
             );
 
-            log.debug(
-                    "[STEP 3] Extracted text preview: {}",
-                    extractedText.substring(
-                            0,
-                            Math.min(300, extractedText.length())
-                    )
-            );
 
-
-            // =========================================================
-            // STEP 4: Validate extracted text
-            // =========================================================
-
-            log.info("[STEP 4] Validating extracted text");
-
-            if (extractedText.isBlank()) {
-
-                log.error("[STEP 4] Extracted text is blank");
-
-                throw new IllegalStateException(
-                        "No text could be extracted from the resume."
-                );
-            }
-
-            log.info("[STEP 4] Extracted text validation successful");
-
-
-            // =========================================================
-            // STEP 5: Save extracted text
-            // =========================================================
+            // =====================================================
+            // STEP 4 — STORE EXTRACTED TEXT
+            // =====================================================
 
             log.info(
-                    "[STEP 5] Saving extracted text to database. Resume ID: {}",
-                    resumeId
+                    "[STEP 4] Saving extracted text"
             );
 
-            resume.setExtractedText(extractedText);
-            resume.setStatus(ResumeStatus.PARSING);
+            resume.setExtractedText(
+                    extractedText
+            );
+
+            resume.setStatus(
+                    ResumeStatus.PARSING
+            );
 
             resumeRepository.save(resume);
 
-            log.info(
-                    "[STEP 5] Extracted text saved successfully. Status: PARSING"
-            );
 
-
-            // =========================================================
-            // STEP 6: Send text to Groq AI
-            // =========================================================
-
-            log.info("[STEP 6] Sending resume text to Groq AI");
+            // =====================================================
+            // STEP 5 — AI PARSING
+            // =====================================================
 
             log.info(
-                    "[STEP 6] Text length being sent to AI: {} characters",
-                    extractedText.length()
+                    "[STEP 5] Sending resume text to AI"
             );
 
             String parsedJson =
-                    resumeAiParsingService.parseResume(extractedText);
+                    resumeAiParsingService.parseResume(
+                            extractedText
+                    );
 
-            log.info("[STEP 6] Groq AI response received");
-
-
-            // =========================================================
-            // STEP 7: Validate AI response
-            // =========================================================
-
-            if (parsedJson == null) {
-
-                log.error("[STEP 7] Groq returned NULL response");
+            if (parsedJson == null
+                    || parsedJson.isBlank()) {
 
                 throw new IllegalStateException(
-                        "Groq AI returned null response."
-                );
-            }
-
-            if (parsedJson.isBlank()) {
-
-                log.error("[STEP 7] Groq returned EMPTY response");
-
-                throw new IllegalStateException(
-                        "Groq AI returned empty response."
+                        "AI returned empty parsed data."
                 );
             }
 
             log.info(
-                    "[STEP 7] Parsed JSON length: {} characters",
+                    "[STEP 5] AI parsing completed. JSON length: {}",
                     parsedJson.length()
             );
 
-            log.debug(
-                    "[STEP 7] Parsed JSON response: {}",
-                    parsedJson
-            );
 
-
-            // =========================================================
-            // STEP 8: Store parsed JSON
-            // =========================================================
+            // =====================================================
+            // STEP 6 — STORE PARSED DATA
+            // =====================================================
 
             log.info(
-                    "[STEP 8] Looking for existing parsed data. Resume ID: {}",
-                    resumeId
+                    "[STEP 6] Saving parsed resume JSON"
             );
 
             ResumeParsedData parsedData =
                     resumeParsedDataRepository
-                            .findByResumeId(resume.getId())
-                            .orElseGet(() -> {
-                                log.info(
-                                        "[STEP 8] No existing parsed data found. Creating new record."
-                                );
-                                return new ResumeParsedData();
-                            });
+                            .findByResumeId(
+                                    resumeId
+                            )
+                            .orElseGet(
+                                    ResumeParsedData::new
+                            );
 
-            parsedData.setResume(resume);
-            parsedData.setParsedJson(parsedJson);
+            parsedData.setResume(
+                    resume
+            );
 
-            log.info("[STEP 8] Saving parsed JSON to resume_parsed_data");
+            parsedData.setParsedJson(
+                    parsedJson
+            );
 
-            resumeParsedDataRepository.save(parsedData);
+            resumeParsedDataRepository.save(
+                    parsedData
+            );
+
+
+            // =====================================================
+            // STEP 7 — COMPLETED
+            // =====================================================
 
             log.info(
-                    "[STEP 8] Parsed JSON saved successfully. Resume ID: {}",
+                    "[STEP 7] Marking Resume {} as COMPLETED",
                     resumeId
             );
 
-
-            // =========================================================
-            // STEP 9: Mark COMPLETED (UPDATED - FIX FOR CASCADE DELETE)
-            // =========================================================
-
-            log.info(
-                    "[STEP 9] Marking resume {} as COMPLETED",
-                    resumeId
+            resumeRepository.updateStatus(
+                    resumeId,
+                    ResumeStatus.COMPLETED
             );
 
-            // ✅ FIX: Use updateStatus() instead of save()
-            // This prevents the cascade delete from removing parsed data
-            resumeRepository.updateStatus(resumeId, ResumeStatus.COMPLETED);
-
             log.info(
-                    "[STEP 9] Resume status updated to COMPLETED successfully"
-            );
-            log.info(
-                    "[STEP 9] Parsed JSON data preserved in resume_parsed_data table"
+                    "========== RESUME PROCESSING COMPLETED =========="
             );
 
-            log.info("========== RESUME PROCESSING SUCCESS ==========");
 
         } catch (Exception e) {
 
@@ -304,112 +295,57 @@ public class ResumeProcessingServiceImpl implements ResumeProcessingService {
             );
 
             log.error(
-                    "File: {}",
-                    resume.getOriginalFileName()
-            );
-
-            log.error(
-                    "Current status before failure: {}",
-                    resume.getStatus()
-            );
-
-            log.error(
-                    "Exception type: {}",
-                    e.getClass().getName()
-            );
-
-            log.error(
-                    "Exception message: {}",
-                    e.getMessage()
-            );
-
-            log.error(
-                    "Full exception:",
+                    "Processing error:",
                     e
             );
 
+
             try {
 
-                // ✅ FIX: Use updateStatus() for FAILED status too
-                resumeRepository.updateStatus(resumeId, ResumeStatus.FAILED);
-
-                log.info(
-                        "Resume {} marked as FAILED",
-                        resumeId
+                resumeRepository.updateStatus(
+                        resumeId,
+                        ResumeStatus.FAILED
                 );
 
             } catch (Exception statusException) {
 
                 log.error(
-                        "Could not update resume {} status to FAILED",
+                        "Failed to mark Resume {} as FAILED",
                         resumeId,
                         statusException
                 );
             }
 
+
             throw new RuntimeException(
-                    "Failed to process resume: "
-                            + resume.getOriginalFileName(),
+                    "Failed to process resume with ID: "
+                            + resumeId,
                     e
             );
         }
     }
 
+
+    // =========================================================
+    // TEMPORARY COMPATIBILITY METHOD
+    // =========================================================
+
     @Override
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public java.util.List<Resume> processUploadedResumes() {
+    @Transactional(readOnly = true)
+    public List<Resume> processUploadedResumes() {
 
-        log.info("========== PROCESSING UPLOADED RESUMES ==========");
+        /*
+         * Batch orchestration now belongs to
+         * ResumeProcessingCoordinator.
+         *
+         * This method is retained temporarily so existing
+         * callers do not immediately break.
+         *
+         * We intentionally do NOT start threads here.
+         */
 
-        java.util.List<Resume> uploadedResumes =
-                resumeRepository.findByStatus(
-                        ResumeStatus.UPLOADED
-                );
-
-        log.info(
-                "Found {} uploaded resumes",
-                uploadedResumes.size()
+        return resumeRepository.findByStatus(
+                ResumeStatus.UPLOADED
         );
-
-        java.util.List<Resume> processedResumes =
-                new java.util.ArrayList<>();
-
-        for (Resume resume : uploadedResumes) {
-
-            log.info(
-                    "Starting processing for Resume ID: {}, File: {}",
-                    resume.getId(),
-                    resume.getOriginalFileName()
-            );
-
-            try {
-
-                process(resume.getId());
-
-                log.info(
-                        "Successfully processed Resume ID: {}",
-                        resume.getId()
-                );
-
-            } catch (Exception e) {
-
-                log.error(
-                        "Failed processing Resume ID: {}, File: {}",
-                        resume.getId(),
-                        resume.getOriginalFileName(),
-                        e
-                );
-            }
-
-            resumeRepository
-                    .findById(resume.getId())
-                    .ifPresent(processedResumes::add);
-        }
-
-        log.info(
-                "========== UPLOADED RESUMES PROCESSING FINISHED =========="
-        );
-
-        return processedResumes;
     }
 }
