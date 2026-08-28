@@ -2,10 +2,8 @@ package com.rockranger.analyzer.resume.processing;
 
 import com.rockranger.analyzer.resume.ai.ResumeAiParsingService;
 import com.rockranger.analyzer.resume.entity.Resume;
-import com.rockranger.analyzer.resume.entity.ResumeParsedData;
 import com.rockranger.analyzer.resume.entity.ResumeStatus;
 import com.rockranger.analyzer.resume.extraction.ResumeExtractionRouter;
-import com.rockranger.analyzer.resume.repository.ResumeParsedDataRepository;
 import com.rockranger.analyzer.resume.repository.ResumeRepository;
 import com.rockranger.analyzer.resume.storage.ResumeStorageService;
 
@@ -13,8 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -27,11 +23,17 @@ public class ResumeProcessingServiceImpl
                     ResumeProcessingServiceImpl.class
             );
 
+
     private final ResumeStorageService resumeStorageService;
+
     private final ResumeExtractionRouter resumeExtractionRouter;
+
     private final ResumeRepository resumeRepository;
+
     private final ResumeAiParsingService resumeAiParsingService;
-    private final ResumeParsedDataRepository resumeParsedDataRepository;
+
+    private final ResumeProcessingPersistenceService
+            persistenceService;
 
 
     public ResumeProcessingServiceImpl(
@@ -39,15 +41,23 @@ public class ResumeProcessingServiceImpl
             ResumeExtractionRouter resumeExtractionRouter,
             ResumeRepository resumeRepository,
             ResumeAiParsingService resumeAiParsingService,
-            ResumeParsedDataRepository resumeParsedDataRepository
+            ResumeProcessingPersistenceService persistenceService
     ) {
 
-        this.resumeStorageService = resumeStorageService;
-        this.resumeExtractionRouter = resumeExtractionRouter;
-        this.resumeRepository = resumeRepository;
-        this.resumeAiParsingService = resumeAiParsingService;
-        this.resumeParsedDataRepository =
-                resumeParsedDataRepository;
+        this.resumeStorageService =
+                resumeStorageService;
+
+        this.resumeExtractionRouter =
+                resumeExtractionRouter;
+
+        this.resumeRepository =
+                resumeRepository;
+
+        this.resumeAiParsingService =
+                resumeAiParsingService;
+
+        this.persistenceService =
+                persistenceService;
     }
 
 
@@ -56,20 +66,22 @@ public class ResumeProcessingServiceImpl
     // =========================================================
 
     @Override
-    @Transactional
     public void process(Resume resume) {
 
-        if (resume == null || resume.getId() == null) {
+        if (resume == null
+                || resume.getId() == null) {
 
             throw new IllegalArgumentException(
                     "Resume and Resume ID cannot be null."
             );
         }
 
+
         log.info(
                 "Starting processing for Resume ID: {}",
                 resume.getId()
         );
+
 
         process(resume.getId());
     }
@@ -80,7 +92,6 @@ public class ResumeProcessingServiceImpl
     // =========================================================
 
     @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(Long resumeId) {
 
         if (resumeId == null) {
@@ -89,6 +100,7 @@ public class ResumeProcessingServiceImpl
                     "Resume ID cannot be null."
             );
         }
+
 
         log.info(
                 "========== RESUME PROCESSING STARTED =========="
@@ -100,6 +112,12 @@ public class ResumeProcessingServiceImpl
         );
 
 
+        /*
+         * Load the resume first.
+         *
+         * We deliberately do NOT keep one large transaction
+         * open for the complete processing operation.
+         */
         Resume resume =
                 resumeRepository.findById(resumeId)
                         .orElseThrow(() -> {
@@ -127,11 +145,10 @@ public class ResumeProcessingServiceImpl
                     resumeId
             );
 
-            resume.setStatus(
-                    ResumeStatus.EXTRACTING
-            );
 
-            resumeRepository.save(resume);
+            persistenceService.markExtracting(
+                    resumeId
+            );
 
 
             // =====================================================
@@ -142,17 +159,21 @@ public class ResumeProcessingServiceImpl
                     "[STEP 2] Downloading resume file"
             );
 
+
             byte[] fileBytes =
                     resumeStorageService.download(
                             resume.getCloudinaryUrl()
                     );
 
-            if (fileBytes == null || fileBytes.length == 0) {
+
+            if (fileBytes == null
+                    || fileBytes.length == 0) {
 
                 throw new IllegalStateException(
                         "Downloaded resume file is empty."
                 );
             }
+
 
             log.info(
                     "[STEP 2] Download successful. Size: {} bytes",
@@ -168,11 +189,13 @@ public class ResumeProcessingServiceImpl
                     "[STEP 3] Starting text extraction"
             );
 
+
             String extractedText =
                     resumeExtractionRouter.extract(
                             fileBytes,
                             resume.getOriginalFileName()
                     );
+
 
             if (extractedText == null
                     || extractedText.isBlank()) {
@@ -181,6 +204,7 @@ public class ResumeProcessingServiceImpl
                         "No text could be extracted from the resume."
                 );
             }
+
 
             log.info(
                     "[STEP 3] Text extraction successful. Length: {}",
@@ -196,15 +220,24 @@ public class ResumeProcessingServiceImpl
                     "[STEP 4] Saving extracted text"
             );
 
-            resume.setExtractedText(
+
+            /*
+             * IMPORTANT:
+             *
+             * This is a completely separate transaction.
+             *
+             * Once this method returns, the extracted text
+             * has been committed.
+             */
+            persistenceService.saveExtractedText(
+                    resumeId,
                     extractedText
             );
 
-            resume.setStatus(
-                    ResumeStatus.PARSING
-            );
 
-            resumeRepository.save(resume);
+            log.info(
+                    "[STEP 4] Extracted text saved successfully."
+            );
 
 
             // =====================================================
@@ -215,10 +248,12 @@ public class ResumeProcessingServiceImpl
                     "[STEP 5] Sending resume text to AI"
             );
 
+
             String parsedJson =
                     resumeAiParsingService.parseResume(
                             extractedText
                     );
+
 
             if (parsedJson == null
                     || parsedJson.isBlank()) {
@@ -227,6 +262,7 @@ public class ResumeProcessingServiceImpl
                         "AI returned empty parsed data."
                 );
             }
+
 
             log.info(
                     "[STEP 5] AI parsing completed. JSON length: {}",
@@ -242,25 +278,18 @@ public class ResumeProcessingServiceImpl
                     "[STEP 6] Saving parsed resume JSON"
             );
 
-            ResumeParsedData parsedData =
-                    resumeParsedDataRepository
-                            .findByResumeId(
-                                    resumeId
-                            )
-                            .orElseGet(
-                                    ResumeParsedData::new
-                            );
 
-            parsedData.setResume(
-                    resume
-            );
-
-            parsedData.setParsedJson(
+            /*
+             * Parsed JSON is also persisted independently.
+             */
+            persistenceService.saveParsedData(
+                    resumeId,
                     parsedJson
             );
 
-            resumeParsedDataRepository.save(
-                    parsedData
+
+            log.info(
+                    "[STEP 6] Parsed resume JSON saved successfully."
             );
 
 
@@ -273,10 +302,11 @@ public class ResumeProcessingServiceImpl
                     resumeId
             );
 
-            resumeRepository.updateStatus(
-                    resumeId,
-                    ResumeStatus.COMPLETED
+
+            persistenceService.markCompleted(
+                    resumeId
             );
+
 
             log.info(
                     "========== RESUME PROCESSING COMPLETED =========="
@@ -289,10 +319,12 @@ public class ResumeProcessingServiceImpl
                     "========== RESUME PROCESSING FAILED =========="
             );
 
+
             log.error(
                     "Resume ID: {}",
                     resumeId
             );
+
 
             log.error(
                     "Processing error:",
@@ -300,12 +332,27 @@ public class ResumeProcessingServiceImpl
             );
 
 
+            /*
+             * IMPORTANT:
+             *
+             * markFailed() uses its own REQUIRES_NEW
+             * transaction.
+             *
+             * Therefore the FAILED status can be committed
+             * even when the AI operation fails.
+             */
             try {
 
-                resumeRepository.updateStatus(
-                        resumeId,
-                        ResumeStatus.FAILED
+                persistenceService.markFailed(
+                        resumeId
                 );
+
+
+                log.info(
+                        "Resume {} marked as FAILED.",
+                        resumeId
+                );
+
 
             } catch (Exception statusException) {
 
@@ -317,6 +364,10 @@ public class ResumeProcessingServiceImpl
             }
 
 
+            /*
+             * The executor catches this exception at the
+             * worker boundary and records the failure.
+             */
             throw new RuntimeException(
                     "Failed to process resume with ID: "
                             + resumeId,
@@ -331,17 +382,15 @@ public class ResumeProcessingServiceImpl
     // =========================================================
 
     @Override
-    @Transactional(readOnly = true)
     public List<Resume> processUploadedResumes() {
 
         /*
-         * Batch orchestration now belongs to
+         * Batch orchestration belongs to
          * ResumeProcessingCoordinator.
          *
-         * This method is retained temporarily so existing
-         * callers do not immediately break.
+         * This method remains temporarily for compatibility.
          *
-         * We intentionally do NOT start threads here.
+         * It does NOT start threads.
          */
 
         return resumeRepository.findByStatus(

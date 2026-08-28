@@ -3,75 +3,70 @@ package com.rockranger.analyzer.resume.ai.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rockranger.analyzer.resume.ai.ResumeAiParsingService;
+import com.rockranger.analyzer.resume.ai.gateway.AiGateway;
 import com.rockranger.analyzer.resume.ai.prompt.ResumeAiPromptProvider;
-import com.rockranger.analyzer.resume.ai.schema.ResumeAiJsonSchema;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
-import java.util.List;
-import java.util.Map;
+import java.util.Iterator;
 
 @Service
 public class ResumeAiParsingServiceImpl
         implements ResumeAiParsingService {
 
     private static final Logger log =
-            LoggerFactory.getLogger(ResumeAiParsingServiceImpl.class);
+            LoggerFactory.getLogger(
+                    ResumeAiParsingServiceImpl.class
+            );
 
-    private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final ResumeAiPromptProvider promptProvider;
-
-    private final String apiKey;
-    private final String apiUrl;
-    private final String model;
+    private final AiGateway aiGateway;
 
 
     public ResumeAiParsingServiceImpl(
-            @Value("${groq.api.key}") String apiKey,
-            @Value("${groq.api.url}") String apiUrl,
-            @Value("${groq.api.model}") String model,
-            ResumeAiPromptProvider promptProvider
+            ResumeAiPromptProvider promptProvider,
+            AiGateway aiGateway
     ) {
 
-        this.objectMapper = new ObjectMapper();
+        /*
+         * Create ObjectMapper locally.
+         *
+         * This avoids requiring ObjectMapper to be
+         * registered as a Spring bean.
+         */
+        this.objectMapper =
+                new ObjectMapper();
 
-        this.restClient = RestClient.builder().build();
+        this.promptProvider =
+                promptProvider;
 
-        this.apiKey = apiKey;
-        this.apiUrl = apiUrl;
-        this.model = model;
+        this.aiGateway =
+                aiGateway;
 
-        this.promptProvider = promptProvider;
-
-        log.info("Groq AI configuration loaded");
-        log.info("Groq URL: {}", apiUrl);
-        log.info("Groq model: {}", model);
-
-        // Never log the actual API key.
         log.info(
-                "Groq API key configured: {}",
-                apiKey != null && !apiKey.isBlank()
+                "Resume AI parsing service initialized."
         );
     }
 
 
+    // ================================================================
+    // PARSE RESUME
+    // ================================================================
+
     @Override
-    public String parseResume(String extractedText) {
+    public String parseResume(
+            String extractedText
+    ) {
 
-        // ================================================================
-        // INPUT VALIDATION
-        // ================================================================
+        // ============================================================
+        // 1. INPUT VALIDATION
+        // ============================================================
 
-        if (extractedText == null || extractedText.isBlank()) {
+        if (extractedText == null
+                || extractedText.isBlank()) {
 
             throw new IllegalArgumentException(
                     "Resume extracted text cannot be empty."
@@ -80,246 +75,220 @@ public class ResumeAiParsingServiceImpl
 
 
         log.info(
-                "Starting resume AI parsing. Extracted text length: {}",
+                "Starting resume AI parsing. " +
+                        "Extracted text length: {}",
                 extractedText.length()
         );
 
 
-        // ================================================================
-        // BUILD PROMPTS
-        // ================================================================
+        // ============================================================
+        // 2. BUILD SYSTEM PROMPT
+        // ============================================================
 
         String systemPrompt =
                 promptProvider.getSystemPrompt();
 
+
+        if (systemPrompt == null
+                || systemPrompt.isBlank()) {
+
+            throw new IllegalStateException(
+                    "Resume AI system prompt cannot be empty."
+            );
+        }
+
+
+        // ============================================================
+        // 3. BUILD USER PROMPT
+        // ============================================================
+
         String userPrompt =
-                promptProvider.buildUserPrompt(extractedText);
+                promptProvider.buildUserPrompt(
+                        extractedText
+                );
 
 
-        // ================================================================
-        // GROQ REQUEST
-        // ================================================================
+        if (userPrompt == null
+                || userPrompt.isBlank()) {
 
-        Map<String, Object> requestBody = Map.of(
+            throw new IllegalStateException(
+                    "Resume AI user prompt cannot be empty."
+            );
+        }
 
-                "model",
-                model,
 
-                "temperature",
-                0,
-
-                "messages",
-                List.of(
-
-                        Map.of(
-                                "role",
-                                "system",
-
-                                "content",
-                                systemPrompt
-                        ),
-
-                        Map.of(
-                                "role",
-                                "user",
-
-                                "content",
-                                userPrompt
-                        )
-                ),
-
-                "response_format",
-                Map.of(
-
-                        "type",
-                        "json_schema",
-
-                        "json_schema",
-                        Map.of(
-
-                                "name",
-                                "resume_extraction",
-
-                                "strict",
-                                true,
-
-                                "schema",
-                                ResumeAiJsonSchema.build()
-                        )
-                )
+        log.debug(
+                "Resume AI prompts prepared."
         );
 
 
-        // ================================================================
-        // CALL GROQ
-        // ================================================================
+        // ============================================================
+        // 4. SEND REQUEST THROUGH AI GATEWAY
+        // ============================================================
+
+        /*
+         * IMPORTANT:
+         *
+         * This class does NOT communicate directly with Groq.
+         *
+         * AiGateway handles:
+         *
+         * - token estimation
+         * - rate limiting
+         * - retry handling
+         * - AI provider communication
+         *
+         * Flow:
+         *
+         * ResumeAiParsingServiceImpl
+         *              ↓
+         *          AiGateway
+         *              ↓
+         *       AiRateLimiter
+         *              ↓
+         *        AiProvider
+         *              ↓
+         *       GroqAiProvider
+         */
+
+        String json;
 
         try {
 
             log.info(
-                    "Sending resume to Groq. Model: {}",
-                    model
-            );
-
-            log.debug(
-                    "Groq endpoint: {}",
-                    apiUrl
+                    "Sending resume to AI Gateway."
             );
 
 
-            String response = restClient.post()
-
-                    .uri(apiUrl)
-
-                    .header(
-                            HttpHeaders.AUTHORIZATION,
-                            "Bearer " + apiKey
-                    )
-
-                    .contentType(
-                            MediaType.APPLICATION_JSON
-                    )
-
-                    .body(requestBody)
-
-                    .retrieve()
-
-                    .body(String.class);
+            json =
+                    aiGateway.generate(
+                            systemPrompt,
+                            userPrompt
+                    );
 
 
-            // ============================================================
-            // HTTP RESPONSE VALIDATION
-            // ============================================================
+        } catch (Exception e) {
 
-            if (response == null || response.isBlank()) {
-
-                throw new RuntimeException(
-                        "Groq returned an empty HTTP response."
-                );
-            }
-
-
-            log.info(
-                    "Groq request completed successfully."
-            );
-
-            log.debug(
-                    "Groq response length: {}",
-                    response.length()
-            );
-
-
-            // ============================================================
-            // PARSE GROQ RESPONSE
-            // ============================================================
-
-            JsonNode root =
-                    objectMapper.readTree(response);
-
-
-            JsonNode content =
-                    root.path("choices")
-                            .path(0)
-                            .path("message")
-                            .path("content");
-
-
-            if (content.isMissingNode()
-                    || content.isNull()
-                    || content.asText().isBlank()) {
-
-                log.error(
-                        "Groq response does not contain " +
-                                "choices[0].message.content"
-                );
-
-                throw new RuntimeException(
-                        "Groq returned an empty AI content response."
-                );
-            }
-
-
-            String json =
-                    content.asText();
-
-
-            log.info(
-                    "Groq returned structured resume JSON. Length: {}",
-                    json.length()
-            );
-
-
-            // ============================================================
-            // JSON SYNTAX VALIDATION
-            // ============================================================
-
-            JsonNode parsedJson =
-                    objectMapper.readTree(json);
-
-
-            if (parsedJson == null
-                    || !parsedJson.isObject()) {
-
-                throw new RuntimeException(
-                        "Groq returned JSON that is not a JSON object."
-                );
-            }
-
-
-            // ============================================================
-            // APPLICATION VALIDATION
-            // ============================================================
-
-            validateTopLevelStructure(parsedJson);
-
-
-            log.info(
-                    "Groq JSON validation successful."
-            );
-
-
-            return json;
-
-
-        } catch (RestClientResponseException e) {
-
+            /*
+             * Do not retry here.
+             *
+             * AiGateway owns the retry mechanism.
+             */
             log.error(
-                    "Groq HTTP error. Status: {}",
-                    e.getStatusCode(),
+                    "AI Gateway failed while parsing resume.",
                     e
             );
 
 
             throw new RuntimeException(
-                    "Groq API request failed. HTTP status: "
-                            + e.getStatusCode(),
+                    "Resume AI parsing failed.",
                     e
             );
+        }
+
+
+        // ============================================================
+        // 5. RESPONSE VALIDATION
+        // ============================================================
+
+        if (json == null
+                || json.isBlank()) {
+
+            log.error(
+                    "AI Gateway returned an empty response."
+            );
+
+
+            throw new RuntimeException(
+                    "AI returned an empty response."
+            );
+        }
+
+
+        log.info(
+                "AI Gateway returned response. " +
+                        "JSON length: {}",
+                json.length()
+        );
+
+
+        // ============================================================
+        // 6. JSON SYNTAX VALIDATION
+        // ============================================================
+
+        JsonNode parsedJson;
+
+        try {
+
+            parsedJson =
+                    objectMapper.readTree(
+                            json
+                    );
 
 
         } catch (Exception e) {
 
             log.error(
-                    "Unexpected error while parsing resume with Groq AI",
+                    "AI returned invalid JSON.",
                     e
             );
 
 
             throw new RuntimeException(
-                    "Failed to parse resume using Groq AI.",
+                    "AI returned invalid JSON.",
                     e
             );
         }
+
+
+        if (parsedJson == null
+                || !parsedJson.isObject()) {
+
+            throw new RuntimeException(
+                    "AI response must be a JSON object."
+            );
+        }
+
+
+        log.debug(
+                "AI JSON syntax validation successful."
+        );
+
+
+        // ============================================================
+        // 7. APPLICATION STRUCTURE VALIDATION
+        // ============================================================
+
+        validateTopLevelStructure(
+                parsedJson
+        );
+
+
+        log.info(
+                "Resume AI JSON validation successful."
+        );
+
+
+        // ============================================================
+        // 8. RETURN VALIDATED JSON
+        // ============================================================
+
+        return json;
     }
 
 
     // ================================================================
-    // APPLICATION-LEVEL VALIDATION
+    // TOP LEVEL VALIDATION
     // ================================================================
 
     private void validateTopLevelStructure(
             JsonNode json
     ) {
+
+        /*
+         * These are the only allowed top-level
+         * properties in the resume JSON.
+         */
 
         String[] requiredFields = {
 
@@ -333,7 +302,12 @@ public class ResumeAiParsingServiceImpl
         };
 
 
-        for (String field : requiredFields) {
+        // ============================================================
+        // REQUIRED TOP LEVEL FIELDS
+        // ============================================================
+
+        for (String field :
+                requiredFields) {
 
             if (!json.has(field)) {
 
@@ -345,68 +319,176 @@ public class ResumeAiParsingServiceImpl
         }
 
 
-        // personalInfo must be an object.
+        // ============================================================
+        // PERSONAL INFORMATION
+        // ============================================================
 
-        if (!json.path("personalInfo").isObject()) {
+        JsonNode personalInfo =
+                json.path(
+                        "personalInfo"
+                );
+
+
+        if (!personalInfo.isObject()) {
 
             throw new RuntimeException(
                     "AI response field 'personalInfo' " +
-                            "must be an object."
+                            "must be a JSON object."
             );
         }
 
 
-        // skills must be an array.
+        String[] personalInfoFields = {
 
-        if (!json.path("skills").isArray()) {
+                "name",
+                "email",
+                "phone",
+                "location",
+                "linkedin",
+                "github",
+                "portfolio"
+        };
+
+
+        for (String field :
+                personalInfoFields) {
+
+            if (!personalInfo.has(field)) {
+
+                throw new RuntimeException(
+                        "AI response is missing " +
+                                "personalInfo field: "
+                                + field
+                );
+            }
+        }
+
+
+        // ============================================================
+        // SUMMARY
+        // ============================================================
+
+        /*
+         * Summary is allowed to be null.
+         *
+         * We only require the property to exist.
+         */
+
+        if (!json.has("summary")) {
 
             throw new RuntimeException(
-                    "AI response field 'skills' " +
-                            "must be an array."
+                    "AI response is missing 'summary'."
             );
         }
 
 
-        // experience must be an array.
+        // ============================================================
+        // ARRAY FIELDS
+        // ============================================================
 
-        if (!json.path("experience").isArray()) {
+        validateArrayField(
+                json,
+                "skills"
+        );
 
-            throw new RuntimeException(
-                    "AI response field 'experience' " +
-                            "must be an array."
-            );
+        validateArrayField(
+                json,
+                "experience"
+        );
+
+        validateArrayField(
+                json,
+                "education"
+        );
+
+        validateArrayField(
+                json,
+                "projects"
+        );
+
+        validateArrayField(
+                json,
+                "certifications"
+        );
+
+
+        // ============================================================
+        // UNEXPECTED TOP LEVEL FIELDS
+        // ============================================================
+
+        /*
+         * Do not allow the AI to add fields such as:
+         *
+         * awards
+         * achievements
+         * references
+         * hobbies
+         * publications
+         *
+         * unless they are explicitly added to the schema later.
+         */
+
+        Iterator<String> fields =
+                json.fieldNames();
+
+
+        while (fields.hasNext()) {
+
+            String actualField =
+                    fields.next();
+
+
+            boolean allowed =
+                    false;
+
+
+            for (String allowedField :
+                    requiredFields) {
+
+                if (allowedField.equals(
+                        actualField
+                )) {
+
+                    allowed = true;
+
+                    break;
+                }
+            }
+
+
+            if (!allowed) {
+
+                throw new RuntimeException(
+                        "AI response contains unexpected " +
+                                "top-level field: "
+                                + actualField
+                );
+            }
         }
+    }
 
 
-        // education must be an array.
+    // ================================================================
+    // ARRAY VALIDATION
+    // ================================================================
 
-        if (!json.path("education").isArray()) {
+    private void validateArrayField(
+            JsonNode json,
+            String fieldName
+    ) {
 
-            throw new RuntimeException(
-                    "AI response field 'education' " +
-                            "must be an array."
-            );
-        }
-
-
-        // projects must be an array.
-
-        if (!json.path("projects").isArray()) {
-
-            throw new RuntimeException(
-                    "AI response field 'projects' " +
-                            "must be an array."
-            );
-        }
+        JsonNode field =
+                json.path(
+                        fieldName
+                );
 
 
-        // certifications must be an array.
-
-        if (!json.path("certifications").isArray()) {
+        if (!field.isArray()) {
 
             throw new RuntimeException(
-                    "AI response field 'certifications' " +
-                            "must be an array."
+                    "AI response field '" +
+                            fieldName +
+                            "' must be a JSON array."
             );
         }
     }

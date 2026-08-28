@@ -2,25 +2,48 @@ spring:
   application:
     name: analyzer
 
+  # =========================================================
+  # MULTIPART FILE UPLOAD
+  # =========================================================
+  servlet:
+    multipart:
+      # Maximum size of one uploaded file
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+
+      # Maximum size of the complete multipart request
+      max-request-size: ${MAX_REQUEST_SIZE:100MB}
+
+  # =========================================================
+  # DATABASE
+  # =========================================================
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  # =========================================================
+  # JPA / HIBERNATE
+  # =========================================================
   jpa:
     hibernate:
       ddl-auto: update
+
     show-sql: true
+
     properties:
       hibernate:
         format_sql: true
 
+  # =========================================================
+  # EMAIL / BREVO SMTP
+  # =========================================================
   mail:
     host: ${BREVO_SMTP_HOST}
     port: ${BREVO_SMTP_PORT}
     username: ${BREVO_SMTP_USERNAME}
     password: ${BREVO_SMTP_PASSWORD}
+
     properties:
       mail:
         smtp:
@@ -28,35 +51,55 @@ spring:
           starttls:
             enable: true
 
+
+# =========================================================
+# JWT
+# =========================================================
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
+
+# =========================================================
+# APPLICATION
+# =========================================================
 app:
   email:
     sender: ${BREVO_SENDER_EMAIL:rockrangerz801@gmail.com}
     sender-name: ${BREVO_SENDER_NAME:Resume Analyzer}
 
-  cookie:
-    secure: ${COOKIE_SECURE:false}
-    same-site: ${COOKIE_SAME_SITE:Lax}
-    domain: ${COOKIE_DOMAIN:}
-    max-age-seconds: ${COOKIE_MAX_AGE:86400}
 
-  cloudinary:
-    cloud-name: ${CLOUDINARY_CLOUD_NAME}
-    api-key: ${CLOUDINARY_API_KEY}
-    api-secret: ${CLOUDINARY_API_SECRET}
+# =========================================================
+# COOKIE
+# =========================================================
+cookie:
+  secure: ${COOKIE_SECURE:false}
+  same-site: ${COOKIE_SAME_SITE:Lax}
+  domain: ${COOKIE_DOMAIN:}
+  max-age-seconds: ${COOKIE_MAX_AGE:86400}
+
+
+# =========================================================
+# CLOUDINARY
+# =========================================================
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME}
+  api-key: ${CLOUDINARY_API_KEY}
+  api-secret: ${CLOUDINARY_API_SECRET}
+
 
 # =========================================================
 # GROQ AI
 # =========================================================
-# Used for current testing and later can be replaced
-# with another production AI provider/model.
+# Provider-specific configuration.
+# The rest of the application should communicate
+# through the AI gateway/provider abstraction.
 groq:
   api:
     key: ${GROQ_API_KEY}
+
     url: ${GROQ_API_URL:https://api.groq.com/openai/v1/chat/completions}
+
     model: ${GROQ_API_MODEL:openai/gpt-oss-120b}
 
 
@@ -65,7 +108,7 @@ groq:
 # =========================================================
 # Local AI is currently disabled.
 #
-# Uncomment this section only when switching back to Ollama.
+# Uncomment this section when switching to Ollama.
 #
 # ollama:
 #   api:
@@ -83,6 +126,24 @@ ocr:
     dpi: ${TESSERACT_DPI:200}
     timeout-seconds: ${TESSERACT_TIMEOUT_SECONDS:60}
 
+
+# =========================================================
+# RESUME PROCESSING
+# =========================================================
 resume:
   processing:
     worker-count: ${RESUME_WORKER_COUNT:1}
+
+
+# =========================================================
+# AI RATE LIMITING
+# =========================================================
+# Provider-independent token rate limiting.
+#
+# Current testing configuration:
+# 8000 estimated input tokens per minute.
+#
+# Change through .env without changing Java code.
+ai:
+  rate-limit:
+    tokens-per-minute: ${AI_TOKENS_PER_MINUTE:8000}
