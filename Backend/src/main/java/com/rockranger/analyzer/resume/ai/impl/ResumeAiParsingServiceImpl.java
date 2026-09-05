@@ -11,7 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class ResumeAiParsingServiceImpl
@@ -25,7 +27,6 @@ public class ResumeAiParsingServiceImpl
     private final ObjectMapper objectMapper;
     private final ResumeAiPromptProvider promptProvider;
     private final AiGateway aiGateway;
-
 
     public ResumeAiParsingServiceImpl(
             ResumeAiPromptProvider promptProvider,
@@ -52,7 +53,6 @@ public class ResumeAiParsingServiceImpl
         );
     }
 
-
     // ================================================================
     // PARSE RESUME
     // ================================================================
@@ -74,13 +74,11 @@ public class ResumeAiParsingServiceImpl
             );
         }
 
-
         log.info(
                 "Starting resume AI parsing. " +
                         "Extracted text length: {}",
                 extractedText.length()
         );
-
 
         // ============================================================
         // 2. BUILD SYSTEM PROMPT
@@ -89,7 +87,6 @@ public class ResumeAiParsingServiceImpl
         String systemPrompt =
                 promptProvider.getSystemPrompt();
 
-
         if (systemPrompt == null
                 || systemPrompt.isBlank()) {
 
@@ -97,7 +94,6 @@ public class ResumeAiParsingServiceImpl
                     "Resume AI system prompt cannot be empty."
             );
         }
-
 
         // ============================================================
         // 3. BUILD USER PROMPT
@@ -108,7 +104,6 @@ public class ResumeAiParsingServiceImpl
                         extractedText
                 );
 
-
         if (userPrompt == null
                 || userPrompt.isBlank()) {
 
@@ -117,11 +112,9 @@ public class ResumeAiParsingServiceImpl
             );
         }
 
-
         log.debug(
                 "Resume AI prompts prepared."
         );
-
 
         // ============================================================
         // 4. SEND REQUEST THROUGH AI GATEWAY
@@ -138,18 +131,6 @@ public class ResumeAiParsingServiceImpl
          * - rate limiting
          * - retry handling
          * - AI provider communication
-         *
-         * Flow:
-         *
-         * ResumeAiParsingServiceImpl
-         *              ↓
-         *          AiGateway
-         *              ↓
-         *       AiRateLimiter
-         *              ↓
-         *        AiProvider
-         *              ↓
-         *       GroqAiProvider
          */
 
         String json;
@@ -160,13 +141,11 @@ public class ResumeAiParsingServiceImpl
                     "Sending resume to AI Gateway."
             );
 
-
             json =
                     aiGateway.generate(
                             systemPrompt,
                             userPrompt
                     );
-
 
         } catch (Exception e) {
 
@@ -181,13 +160,11 @@ public class ResumeAiParsingServiceImpl
                     e
             );
 
-
             throw new RuntimeException(
                     "Resume AI parsing failed.",
                     e
             );
         }
-
 
         // ============================================================
         // 5. RESPONSE VALIDATION
@@ -200,19 +177,16 @@ public class ResumeAiParsingServiceImpl
                     "AI Gateway returned an empty response."
             );
 
-
             throw new RuntimeException(
                     "AI returned an empty response."
             );
         }
-
 
         log.info(
                 "AI Gateway returned response. " +
                         "JSON length: {}",
                 json.length()
         );
-
 
         // ============================================================
         // 6. JSON SYNTAX VALIDATION
@@ -227,7 +201,6 @@ public class ResumeAiParsingServiceImpl
                             json
                     );
 
-
         } catch (Exception e) {
 
             log.error(
@@ -235,13 +208,11 @@ public class ResumeAiParsingServiceImpl
                     e
             );
 
-
             throw new RuntimeException(
                     "AI returned invalid JSON.",
                     e
             );
         }
-
 
         if (parsedJson == null
                 || !parsedJson.isObject()) {
@@ -251,11 +222,9 @@ public class ResumeAiParsingServiceImpl
             );
         }
 
-
         log.debug(
                 "AI JSON syntax validation successful."
         );
-
 
         // ============================================================
         // 7. APPLICATION STRUCTURE VALIDATION
@@ -265,11 +234,9 @@ public class ResumeAiParsingServiceImpl
                 parsedJson
         );
 
-
         log.info(
                 "Resume AI JSON validation successful."
         );
-
 
         // ============================================================
         // 8. RETURN VALIDATED JSON
@@ -278,7 +245,6 @@ public class ResumeAiParsingServiceImpl
         return json;
     }
 
-
     // ================================================================
     // TOP LEVEL VALIDATION
     // ================================================================
@@ -286,11 +252,6 @@ public class ResumeAiParsingServiceImpl
     private void validateTopLevelStructure(
             JsonNode json
     ) {
-
-        /*
-         * These are the only allowed top-level
-         * properties in the resume JSON.
-         */
 
         String[] requiredFields = {
 
@@ -303,6 +264,10 @@ public class ResumeAiParsingServiceImpl
                 "certifications"
         };
 
+        Set<String> allowedTopLevelFields =
+                new HashSet<>(
+                        Set.of(requiredFields)
+                );
 
         // ============================================================
         // REQUIRED TOP LEVEL FIELDS
@@ -320,16 +285,12 @@ public class ResumeAiParsingServiceImpl
             }
         }
 
-
         // ============================================================
-        // PERSONAL INFORMATION
+        // TOP LEVEL FIELD TYPES
         // ============================================================
 
         JsonNode personalInfo =
-                json.path(
-                        "personalInfo"
-                );
-
+                json.path("personalInfo");
 
         if (!personalInfo.isObject()) {
 
@@ -339,96 +300,82 @@ public class ResumeAiParsingServiceImpl
             );
         }
 
+        JsonNode summary =
+                json.path("summary");
 
-        String[] personalInfoFields = {
+        validateNullableString(
+                summary,
+                "summary"
+        );
 
-                "name",
-                "email",
-                "phone",
-                "location",
-                "linkedin",
-                "github",
-                "portfolio"
-        };
-
-
-        for (String field :
-                personalInfoFields) {
-
-            if (!personalInfo.has(field)) {
-
-                throw new RuntimeException(
-                        "AI response is missing " +
-                                "personalInfo field: "
-                                + field
-                );
-            }
-        }
-
-
-        // ============================================================
-        // SUMMARY
-        // ============================================================
-
-        /*
-         * Summary is allowed to be null.
-         *
-         * We only require the property to exist.
-         */
-
-        if (!json.has("summary")) {
-
-            throw new RuntimeException(
-                    "AI response is missing 'summary'."
-            );
-        }
-
-
-        // ============================================================
-        // ARRAY FIELDS
-        // ============================================================
-
-        validateArrayField(
-                json,
+        validateStringArray(
+                json.path("skills"),
                 "skills"
         );
 
-        validateArrayField(
-                json,
+        validateObjectArray(
+                json.path("experience"),
                 "experience"
         );
 
-        validateArrayField(
-                json,
+        validateObjectArray(
+                json.path("education"),
                 "education"
         );
 
-        validateArrayField(
-                json,
+        validateObjectArray(
+                json.path("projects"),
                 "projects"
         );
 
-        validateArrayField(
-                json,
+        validateObjectArray(
+                json.path("certifications"),
                 "certifications"
         );
 
+        // ============================================================
+        // PERSONAL INFORMATION
+        // ============================================================
+
+        validatePersonalInfo(
+                personalInfo
+        );
+
+        // ============================================================
+        // EXPERIENCE
+        // ============================================================
+
+        validateExperience(
+                json.path("experience")
+        );
+
+        // ============================================================
+        // EDUCATION
+        // ============================================================
+
+        validateEducation(
+                json.path("education")
+        );
+
+        // ============================================================
+        // PROJECTS
+        // ============================================================
+
+        validateProjects(
+                json.path("projects")
+        );
+
+        // ============================================================
+        // CERTIFICATIONS
+        // ============================================================
+
+        validateCertifications(
+                json.path("certifications")
+        );
 
         // ============================================================
         // UNEXPECTED TOP LEVEL FIELDS
         // ============================================================
-
-        /*
-         * Do not allow the AI to add fields such as:
-         *
-         * awards
-         * achievements
-         * references
-         * hobbies
-         * publications
-         *
-         * unless they are explicitly added to the schema later.
-         */
 
         for (Map.Entry<String, JsonNode> entry :
                 json.properties()) {
@@ -436,25 +383,9 @@ public class ResumeAiParsingServiceImpl
             String actualField =
                     entry.getKey();
 
-            boolean allowed =
-                    false;
-
-
-            for (String allowedField :
-                    requiredFields) {
-
-                if (allowedField.equals(
-                        actualField
-                )) {
-
-                    allowed = true;
-
-                    break;
-                }
-            }
-
-
-            if (!allowed) {
+            if (!allowedTopLevelFields.contains(
+                    actualField
+            )) {
 
                 throw new RuntimeException(
                         "AI response contains unexpected " +
@@ -465,21 +396,396 @@ public class ResumeAiParsingServiceImpl
         }
     }
 
+    // ================================================================
+    // PERSONAL INFORMATION VALIDATION
+    // ================================================================
+
+    private void validatePersonalInfo(
+            JsonNode personalInfo
+    ) {
+
+        String[] fields = {
+
+                "name",
+                "email",
+                "phone",
+                "location",
+                "linkedin",
+                "github",
+                "portfolio"
+        };
+
+        Set<String> allowedFields =
+                new HashSet<>(
+                        Set.of(fields)
+                );
+
+        for (String field : fields) {
+
+            if (!personalInfo.has(field)) {
+
+                throw new RuntimeException(
+                        "AI response is missing " +
+                                "personalInfo field: "
+                                + field
+                );
+            }
+
+            validateNullableString(
+                    personalInfo.path(field),
+                    "personalInfo." + field
+            );
+        }
+
+        validateUnexpectedFields(
+                personalInfo,
+                allowedFields,
+                "personalInfo"
+        );
+    }
+
+    // ================================================================
+    // EXPERIENCE VALIDATION
+    // ================================================================
+
+    private void validateExperience(
+            JsonNode experience
+    ) {
+
+        String[] fields = {
+
+                "company",
+                "role",
+                "startDate",
+                "endDate",
+                "location",
+                "responsibilities"
+        };
+
+        Set<String> allowedFields =
+                new HashSet<>(
+                        Set.of(fields)
+                );
+
+        for (int i = 0;
+             i < experience.size();
+             i++) {
+
+            JsonNode item =
+                    experience.get(i);
+
+            String path =
+                    "experience[" + i + "]";
+
+            if (!item.isObject()) {
+
+                throw new RuntimeException(
+                        path +
+                                " must be a JSON object."
+                );
+            }
+
+            for (String field : fields) {
+
+                if (!item.has(field)) {
+
+                    throw new RuntimeException(
+                            path +
+                                    " is missing required field: "
+                                    + field
+                    );
+                }
+            }
+
+            validateNullableString(
+                    item.path("company"),
+                    path + ".company"
+            );
+
+            validateNullableString(
+                    item.path("role"),
+                    path + ".role"
+            );
+
+            validateNullableString(
+                    item.path("startDate"),
+                    path + ".startDate"
+            );
+
+            validateNullableString(
+                    item.path("endDate"),
+                    path + ".endDate"
+            );
+
+            validateNullableString(
+                    item.path("location"),
+                    path + ".location"
+            );
+
+            validateStringArray(
+                    item.path("responsibilities"),
+                    path + ".responsibilities"
+            );
+
+            validateUnexpectedFields(
+                    item,
+                    allowedFields,
+                    path
+            );
+        }
+    }
+
+    // ================================================================
+    // EDUCATION VALIDATION
+    // ================================================================
+
+    private void validateEducation(
+            JsonNode education
+    ) {
+
+        String[] fields = {
+
+                "degree",
+                "institution",
+                "startYear",
+                "endYear",
+                "cgpa"
+        };
+
+        Set<String> allowedFields =
+                new HashSet<>(
+                        Set.of(fields)
+                );
+
+        for (int i = 0;
+             i < education.size();
+             i++) {
+
+            JsonNode item =
+                    education.get(i);
+
+            String path =
+                    "education[" + i + "]";
+
+            if (!item.isObject()) {
+
+                throw new RuntimeException(
+                        path +
+                                " must be a JSON object."
+                );
+            }
+
+            for (String field : fields) {
+
+                if (!item.has(field)) {
+
+                    throw new RuntimeException(
+                            path +
+                                    " is missing required field: "
+                                    + field
+                    );
+                }
+            }
+
+            validateNullableString(
+                    item.path("degree"),
+                    path + ".degree"
+            );
+
+            validateNullableString(
+                    item.path("institution"),
+                    path + ".institution"
+            );
+
+            validateNullableString(
+                    item.path("startYear"),
+                    path + ".startYear"
+            );
+
+            validateNullableString(
+                    item.path("endYear"),
+                    path + ".endYear"
+            );
+
+            validateNullableString(
+                    item.path("cgpa"),
+                    path + ".cgpa"
+            );
+
+            validateUnexpectedFields(
+                    item,
+                    allowedFields,
+                    path
+            );
+        }
+    }
+
+    // ================================================================
+    // PROJECT VALIDATION
+    // ================================================================
+
+    private void validateProjects(
+            JsonNode projects
+    ) {
+
+        String[] fields = {
+
+                "name",
+                "description",
+                "technologies",
+                "github",
+                "live"
+        };
+
+        Set<String> allowedFields =
+                new HashSet<>(
+                        Set.of(fields)
+                );
+
+        for (int i = 0;
+             i < projects.size();
+             i++) {
+
+            JsonNode item =
+                    projects.get(i);
+
+            String path =
+                    "projects[" + i + "]";
+
+            if (!item.isObject()) {
+
+                throw new RuntimeException(
+                        path +
+                                " must be a JSON object."
+                );
+            }
+
+            for (String field : fields) {
+
+                if (!item.has(field)) {
+
+                    throw new RuntimeException(
+                            path +
+                                    " is missing required field: "
+                                    + field
+                    );
+                }
+            }
+
+            validateNullableString(
+                    item.path("name"),
+                    path + ".name"
+            );
+
+            validateStringArray(
+                    item.path("description"),
+                    path + ".description"
+            );
+
+            validateStringArray(
+                    item.path("technologies"),
+                    path + ".technologies"
+            );
+
+            validateNullableString(
+                    item.path("github"),
+                    path + ".github"
+            );
+
+            validateNullableString(
+                    item.path("live"),
+                    path + ".live"
+            );
+
+            validateUnexpectedFields(
+                    item,
+                    allowedFields,
+                    path
+            );
+        }
+    }
+
+    // ================================================================
+    // CERTIFICATION VALIDATION
+    // ================================================================
+
+    private void validateCertifications(
+            JsonNode certifications
+    ) {
+
+        String[] fields = {
+
+                "name",
+                "issuer",
+                "date"
+        };
+
+        Set<String> allowedFields =
+                new HashSet<>(
+                        Set.of(fields)
+                );
+
+        for (int i = 0;
+             i < certifications.size();
+             i++) {
+
+            JsonNode item =
+                    certifications.get(i);
+
+            String path =
+                    "certifications[" + i + "]";
+
+            if (!item.isObject()) {
+
+                throw new RuntimeException(
+                        path +
+                                " must be a JSON object."
+                );
+            }
+
+            for (String field : fields) {
+
+                if (!item.has(field)) {
+
+                    throw new RuntimeException(
+                            path +
+                                    " is missing required field: "
+                                    + field
+                    );
+                }
+            }
+
+            validateNullableString(
+                    item.path("name"),
+                    path + ".name"
+            );
+
+            validateNullableString(
+                    item.path("issuer"),
+                    path + ".issuer"
+            );
+
+            validateNullableString(
+                    item.path("date"),
+                    path + ".date"
+            );
+
+            validateUnexpectedFields(
+                    item,
+                    allowedFields,
+                    path
+            );
+        }
+    }
 
     // ================================================================
     // ARRAY VALIDATION
     // ================================================================
 
-    private void validateArrayField(
-            JsonNode json,
+    private void validateObjectArray(
+            JsonNode field,
             String fieldName
     ) {
-
-        JsonNode field =
-                json.path(
-                        fieldName
-                );
-
 
         if (!field.isArray()) {
 
@@ -488,6 +794,93 @@ public class ResumeAiParsingServiceImpl
                             fieldName +
                             "' must be a JSON array."
             );
+        }
+    }
+
+    private void validateStringArray(
+            JsonNode field,
+            String fieldName
+    ) {
+
+        if (!field.isArray()) {
+
+            throw new RuntimeException(
+                    "AI response field '" +
+                            fieldName +
+                            "' must be a JSON array."
+            );
+        }
+
+        for (int i = 0;
+             i < field.size();
+             i++) {
+
+            JsonNode item =
+                    field.get(i);
+
+            if (!item.isTextual()) {
+
+                throw new RuntimeException(
+                        "AI response field '" +
+                                fieldName +
+                                "' must contain only strings. " +
+                                "Invalid item at index " +
+                                i
+                );
+            }
+        }
+    }
+
+    // ================================================================
+    // NULLABLE STRING VALIDATION
+    // ================================================================
+
+    private void validateNullableString(
+            JsonNode field,
+            String fieldName
+    ) {
+
+        if (field.isNull()) {
+            return;
+        }
+
+        if (!field.isTextual()) {
+
+            throw new RuntimeException(
+                    "AI response field '" +
+                            fieldName +
+                            "' must be a string or null."
+            );
+        }
+    }
+
+    // ================================================================
+    // UNEXPECTED FIELD VALIDATION
+    // ================================================================
+
+    private void validateUnexpectedFields(
+            JsonNode object,
+            Set<String> allowedFields,
+            String objectPath
+    ) {
+
+        for (Map.Entry<String, JsonNode> entry :
+                object.properties()) {
+
+            String actualField =
+                    entry.getKey();
+
+            if (!allowedFields.contains(
+                    actualField
+            )) {
+
+                throw new RuntimeException(
+                        "AI response contains unexpected field '" +
+                                actualField +
+                                "' in " +
+                                objectPath
+                );
+            }
         }
     }
 }

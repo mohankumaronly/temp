@@ -57,7 +57,7 @@ public final class ResumeAiPrompt {
 
             18. Do NOT add explanations before or after the JSON.
 
-            19. Use EXACTLY the field names defined by the schema.
+            19. Use EXACTLY the field names defined below.
 
             20. Do NOT create additional fields.
 
@@ -108,7 +108,8 @@ public final class ResumeAiPrompt {
             projects
             certifications
 
-            The following structure illustrates the required output:
+
+            The structure MUST be:
 
             {
               "personalInfo": {
@@ -139,9 +140,9 @@ public final class ResumeAiPrompt {
             - email
             - phone
             - location
-            - LinkedIn URL
-            - GitHub URL
-            - portfolio URL
+            - LinkedIn
+            - GitHub
+            - portfolio
 
             If a value is not explicitly present, return null.
 
@@ -151,8 +152,7 @@ public final class ResumeAiPrompt {
 
             Do not convert ordinary text into a URL.
 
-            Preserve explicitly present URLs as they appear in the
-            resume.
+            Preserve explicitly present URLs as they appear in the resume.
 
 
             ================================================================
@@ -223,8 +223,47 @@ public final class ResumeAiPrompt {
             A responsibility, achievement, or bullet point is NOT a
             separate experience entry.
 
-            Keep responsibilities and achievements inside the "details"
-            array belonging to the corresponding experience.
+            Each experience object MUST contain exactly these fields:
+
+            {
+              "company": null,
+              "role": null,
+              "startDate": null,
+              "endDate": null,
+              "location": null,
+              "responsibilities": []
+            }
+
+            FIELD DEFINITIONS:
+
+            company:
+            The explicitly identified employer, organization, or company.
+
+            role:
+            The explicitly identified job title, position, or role.
+
+            startDate:
+            The explicitly stated beginning date or period.
+
+            endDate:
+            The explicitly stated ending date or period.
+
+            location:
+            The explicitly stated work location.
+
+            responsibilities:
+            An array of responsibility, achievement, or work-description
+            statements belonging to that experience.
+
+            If the resume contains responsibilities or achievements for an
+            experience, extract them into the "responsibilities" array.
+
+            Do NOT leave responsibilities null when the resume explicitly
+            contains relevant responsibilities.
+
+            If no responsibilities are available:
+
+            "responsibilities": []
 
             Create a new experience entry only when the resume clearly
             identifies a different:
@@ -233,10 +272,6 @@ public final class ResumeAiPrompt {
             - organization
             - position
             - employment period
-
-            Preserve this relationship:
-
-            company -> title -> startDate -> endDate -> details
 
             Do NOT interpret action-verb sentences such as:
 
@@ -257,12 +292,9 @@ public final class ResumeAiPrompt {
 
             "experience": []
 
-            If an experience field is unavailable:
+            If an experience scalar field is unavailable:
 
             return null for that field.
-
-            Keep all relevant responsibilities and achievements belonging
-            to that position inside its "details" array.
 
 
             ================================================================
@@ -278,6 +310,35 @@ public final class ResumeAiPrompt {
             - Diploma
             - PhD
             - other explicitly identified academic qualifications
+
+            Each education object MUST contain exactly these fields:
+
+            {
+              "degree": null,
+              "institution": null,
+              "startYear": null,
+              "endYear": null,
+              "cgpa": null
+            }
+
+            FIELD DEFINITIONS:
+
+            degree:
+            The explicitly stated degree, diploma, qualification, or program.
+
+            institution:
+            The explicitly stated educational institution.
+
+            startYear:
+            The explicitly stated starting year.
+
+            endYear:
+            The explicitly stated ending or graduation year.
+
+            cgpa:
+            The explicitly stated CGPA, GPA, grade, or equivalent value.
+
+            Do NOT invent academic dates or grades.
 
             Do NOT treat the following as formal education unless the
             resume explicitly identifies them as education:
@@ -306,14 +367,37 @@ public final class ResumeAiPrompt {
             A project should represent an actual project described in the
             resume.
 
-            Keep the following information associated with the correct
-            project:
+            Each project object MUST contain exactly these fields:
 
-            - title
-            - description
-            - technologies
-            - GitHub URL
-            - live URL
+            {
+              "name": null,
+              "description": [],
+              "technologies": [],
+              "github": null,
+              "live": null
+            }
+
+            FIELD DEFINITIONS:
+
+            name:
+            The explicitly stated project name or title.
+
+            description:
+            An array containing the project's descriptions,
+            responsibilities, features, achievements, or other
+            explicitly stated project details.
+
+            technologies:
+            Technologies explicitly associated with that project.
+
+            github:
+            An explicitly provided GitHub URL for the project.
+
+            live:
+            An explicitly provided live/demo URL for the project.
+
+            If the project has multiple description statements,
+            preserve them as separate strings in the description array.
 
             Do NOT create a project merely because technologies are listed.
 
@@ -324,15 +408,21 @@ public final class ResumeAiPrompt {
 
             Extract GitHub or live URLs only when explicitly present.
 
+            Do NOT invent project names.
+
+            If the project name is not explicitly available:
+
+            "name": null
+
             If no projects are present:
 
             "projects": []
 
             If a project field is unavailable:
 
-            return null for that field.
+            return null for scalar fields and [] for array fields.
 
-            For project descriptions, preserve the original meaning.
+            Preserve the original meaning of project descriptions.
 
 
             ================================================================
@@ -341,6 +431,27 @@ public final class ResumeAiPrompt {
 
             Extract explicitly identified certifications.
 
+            Each certification object MUST contain exactly these fields:
+
+            {
+              "name": null,
+              "issuer": null,
+              "date": null
+            }
+
+            FIELD DEFINITIONS:
+
+            name:
+            The explicitly stated certification, certificate, qualification,
+            competition certification, or certification-like achievement.
+
+            issuer:
+            The explicitly stated organization, institution, company,
+            platform, or authority that issued or provided it.
+
+            date:
+            The explicitly stated certification date, year, or period.
+
             Do NOT invent:
 
             - certification names
@@ -348,13 +459,13 @@ public final class ResumeAiPrompt {
             - dates
             - certification details
 
+            If an individual certification field is unavailable:
+
+            return null for that field.
+
             If no certifications are present:
 
             "certifications": []
-
-            If a certification field is unavailable:
-
-            return null for that field.
 
 
             ================================================================
@@ -421,29 +532,64 @@ public final class ResumeAiPrompt {
 
             5. summary exists.
 
-            6. skills exists.
+            6. skills exists and is an array of strings.
 
-            7. experience exists.
+            7. experience exists and is an array of objects.
 
-            8. education exists.
+            8. Every experience object contains:
+               company
+               role
+               startDate
+               endDate
+               location
+               responsibilities
 
-            9. projects exists.
+            9. Every responsibilities value is an array of strings.
 
-            10. certifications exists.
+            10. education exists and is an array of objects.
 
-            11. Missing scalar values are null.
+            11. Every education object contains:
+                degree
+                institution
+                startYear
+                endYear
+                cgpa
 
-            12. Missing arrays are [].
+            12. projects exists and is an array of objects.
 
-            13. No required property is omitted.
+            13. Every project object contains:
+                name
+                description
+                technologies
+                github
+                live
 
-            14. No additional top-level properties are added.
+            14. Every description value is an array of strings.
 
-            15. No information has been invented.
+            15. Every technologies value is an array of strings.
 
-            16. The JSON is syntactically valid.
+            16. certifications exists and is an array of objects.
 
-            17. The response contains ONLY JSON.
+            17. Every certification object contains:
+                name
+                issuer
+                date
+
+            18. Missing scalar values are null.
+
+            19. Missing arrays are [].
+
+            20. No required property is omitted.
+
+            21. No additional top-level properties are added.
+
+            22. No additional nested properties are added.
+
+            23. No information has been invented.
+
+            24. The JSON is syntactically valid.
+
+            25. The response contains ONLY JSON.
 
             IMPORTANT:
 

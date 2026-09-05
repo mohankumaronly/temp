@@ -76,14 +76,7 @@ public final class ResumeAiJsonSchema {
                         // =====================================================
 
                         "skills",
-                        Map.of(
-                                "type", "array",
-
-                                "items",
-                                Map.of(
-                                        "type", "string"
-                                )
-                        ),
+                        arrayOfStrings(),
 
                         // =====================================================
                         // EXPERIENCE
@@ -101,10 +94,10 @@ public final class ResumeAiJsonSchema {
 
                                         "properties", Map.of(
 
-                                                "title",
+                                                "company",
                                                 nullableString(),
 
-                                                "company",
+                                                "role",
                                                 nullableString(),
 
                                                 "startDate",
@@ -113,24 +106,20 @@ public final class ResumeAiJsonSchema {
                                                 "endDate",
                                                 nullableString(),
 
-                                                "details",
-                                                Map.of(
-                                                        "type", "array",
+                                                "location",
+                                                nullableString(),
 
-                                                        "items",
-                                                        Map.of(
-                                                                "type",
-                                                                "string"
-                                                        )
-                                                )
+                                                "responsibilities",
+                                                arrayOfStrings()
                                         ),
 
                                         "required", List.of(
-                                                "title",
                                                 "company",
+                                                "role",
                                                 "startDate",
                                                 "endDate",
-                                                "details"
+                                                "location",
+                                                "responsibilities"
                                         )
                                 )
                         ),
@@ -157,13 +146,10 @@ public final class ResumeAiJsonSchema {
                                                 "institution",
                                                 nullableString(),
 
-                                                "field",
+                                                "startYear",
                                                 nullableString(),
 
-                                                "startDate",
-                                                nullableString(),
-
-                                                "endDate",
+                                                "endYear",
                                                 nullableString(),
 
                                                 "cgpa",
@@ -173,9 +159,8 @@ public final class ResumeAiJsonSchema {
                                         "required", List.of(
                                                 "degree",
                                                 "institution",
-                                                "field",
-                                                "startDate",
-                                                "endDate",
+                                                "startYear",
+                                                "endYear",
                                                 "cgpa"
                                         )
                                 )
@@ -197,30 +182,14 @@ public final class ResumeAiJsonSchema {
 
                                         "properties", Map.of(
 
-                                                "title",
+                                                "name",
                                                 nullableString(),
 
                                                 "description",
-                                                Map.of(
-                                                        "type", "array",
-
-                                                        "items",
-                                                        Map.of(
-                                                                "type",
-                                                                "string"
-                                                        )
-                                                ),
+                                                arrayOfStrings(),
 
                                                 "technologies",
-                                                Map.of(
-                                                        "type", "array",
-
-                                                        "items",
-                                                        Map.of(
-                                                                "type",
-                                                                "string"
-                                                        )
-                                                ),
+                                                arrayOfStrings(),
 
                                                 "github",
                                                 nullableString(),
@@ -230,7 +199,7 @@ public final class ResumeAiJsonSchema {
                                         ),
 
                                         "required", List.of(
-                                                "title",
+                                                "name",
                                                 "description",
                                                 "technologies",
                                                 "github",
@@ -290,7 +259,6 @@ public final class ResumeAiJsonSchema {
         );
     }
 
-
     /**
      * Creates a schema property that accepts either:
      *
@@ -303,6 +271,23 @@ public final class ResumeAiJsonSchema {
         return Map.of(
                 "type",
                 List.of("string", "null")
+        );
+    }
+
+    /**
+     * Creates a schema property representing:
+     *
+     * array of strings
+     */
+    private static Map<String, Object> arrayOfStrings() {
+
+        return Map.of(
+                "type", "array",
+
+                "items",
+                Map.of(
+                        "type", "string"
+                )
         );
     }
 }
