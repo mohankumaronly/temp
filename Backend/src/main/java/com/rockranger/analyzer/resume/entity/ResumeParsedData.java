@@ -1,6 +1,9 @@
 package com.rockranger.analyzer.resume.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -27,7 +30,7 @@ public class ResumeParsedData {
     )
     private Resume resume;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(
             name = "parsed_json",
             columnDefinition = "json",
