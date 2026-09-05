@@ -28,7 +28,7 @@ public class Resume {
     private ResumeStatus status;
 
     @Lob
-    @Column(name = "extracted_text", columnDefinition = "LONGTEXT")
+    @Column(name = "extracted_text", columnDefinition = "TEXT")
     private String extractedText;
 
     @Column(name = "created_at", nullable = false)
