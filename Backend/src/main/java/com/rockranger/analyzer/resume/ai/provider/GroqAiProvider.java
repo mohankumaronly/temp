@@ -1,7 +1,8 @@
 package com.rockranger.analyzer.resume.ai.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 import com.rockranger.analyzer.resume.ai.schema.ResumeAiJsonSchema;
 
 import org.slf4j.Logger;

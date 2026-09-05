@@ -1,6 +1,7 @@
 package com.rockranger.analyzer.resume.controller;
 
 import com.rockranger.analyzer.authentication.entity.User;
+import com.rockranger.analyzer.resume.dto.ResumeDetailsResponse;
 import com.rockranger.analyzer.resume.dto.ResumeResponse;
 import com.rockranger.analyzer.resume.entity.Resume;
 import com.rockranger.analyzer.resume.processing.ResumeProcessingCoordinator;
@@ -24,7 +25,6 @@ public class ResumeController {
     private final ResumeProcessingCoordinator
             resumeProcessingCoordinator;
 
-
     public ResumeController(
             ResumeService resumeService,
             ResumeProcessingCoordinator resumeProcessingCoordinator
@@ -35,7 +35,6 @@ public class ResumeController {
         this.resumeProcessingCoordinator =
                 resumeProcessingCoordinator;
     }
-
 
     // =========================================================
     // UPLOAD RESUMES
@@ -48,24 +47,20 @@ public class ResumeController {
     ) {
 
         if (authentication == null) {
-
             throw new IllegalArgumentException(
                     "Authentication required."
             );
         }
-
 
         String email =
                 (authentication.getPrincipal() instanceof User user)
                         ? user.getEmail()
                         : authentication.getName();
 
-
         resumeService.uploadResumes(
                 files,
                 email
         );
-
 
         return ResponseEntity.ok(
                 Map.of(
@@ -78,7 +73,6 @@ public class ResumeController {
                 )
         );
     }
-
 
     // =========================================================
     // PROCESS UPLOADED RESUMES
@@ -108,7 +102,6 @@ public class ResumeController {
                 resumeProcessingCoordinator
                         .submitUploadedResumes();
 
-
         return ResponseEntity.ok(
                 Map.of(
                         "status",
@@ -121,44 +114,36 @@ public class ResumeController {
         );
     }
 
-
     // =========================================================
-    // GET RESUME BY ID
+    // GET RESUME BY ID WITH PARSED DATA
     // =========================================================
 
     @GetMapping("/{id}")
-    public ResponseEntity<ResumeResponse>
+    public ResponseEntity<ResumeDetailsResponse>
     getResumeById(
             @PathVariable Long id,
             Authentication authentication
     ) {
 
         if (authentication == null) {
-
             throw new IllegalArgumentException(
                     "Authentication required."
             );
         }
-
 
         String email =
                 (authentication.getPrincipal() instanceof User user)
                         ? user.getEmail()
                         : authentication.getName();
 
-
-        Resume resume =
-                resumeService.getResumeById(
+        ResumeDetailsResponse response =
+                resumeService.getResumeDetailsById(
                         id,
                         email
                 );
 
-
-        return ResponseEntity.ok(
-                ResumeResponse.fromEntity(resume)
-        );
+        return ResponseEntity.ok(response);
     }
-
 
     // =========================================================
     // GET MY RESUMES
@@ -171,30 +156,25 @@ public class ResumeController {
     ) {
 
         if (authentication == null) {
-
             throw new IllegalArgumentException(
                     "Authentication required."
             );
         }
-
 
         String email =
                 (authentication.getPrincipal() instanceof User user)
                         ? user.getEmail()
                         : authentication.getName();
 
-
         List<Resume> resumes =
                 resumeService.getResumesByUserEmail(
                         email
                 );
 
-
         List<ResumeResponse> responseList =
                 resumes.stream()
                         .map(ResumeResponse::fromEntity)
                         .collect(Collectors.toList());
-
 
         return ResponseEntity.ok(
                 responseList

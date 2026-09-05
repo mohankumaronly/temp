@@ -1,7 +1,8 @@
 package com.rockranger.analyzer.resume.ai.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 import com.rockranger.analyzer.resume.ai.ResumeAiParsingService;
 import com.rockranger.analyzer.resume.ai.gateway.AiGateway;
 import com.rockranger.analyzer.resume.ai.prompt.ResumeAiPromptProvider;
@@ -10,7 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.Iterator;
+import java.util.Map;
 
 @Service
 public class ResumeAiParsingServiceImpl
@@ -174,6 +175,7 @@ public class ResumeAiParsingServiceImpl
              *
              * AiGateway owns the retry mechanism.
              */
+
             log.error(
                     "AI Gateway failed while parsing resume.",
                     e
@@ -428,15 +430,11 @@ public class ResumeAiParsingServiceImpl
          * unless they are explicitly added to the schema later.
          */
 
-        Iterator<String> fields =
-                json.fieldNames();
-
-
-        while (fields.hasNext()) {
+        for (Map.Entry<String, JsonNode> entry :
+                json.properties()) {
 
             String actualField =
-                    fields.next();
-
+                    entry.getKey();
 
             boolean allowed =
                     false;

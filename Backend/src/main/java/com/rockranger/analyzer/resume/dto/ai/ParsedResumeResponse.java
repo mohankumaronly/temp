@@ -9,8 +9,9 @@ public record ParsedResumeResponse(
         List<Experience> experience,
         List<Education> education,
         List<Project> projects,
-        List<String> certifications
+        List<Certification> certifications
 ) {
+
     public record PersonalInfo(
             String name,
             String email,
@@ -40,9 +41,15 @@ public record ParsedResumeResponse(
 
     public record Project(
             String name,
-            String description,
+            List<String> description,
             List<String> technologies,
             String github,
             String live
+    ) {}
+
+    public record Certification(
+            String name,
+            String issuer,
+            String date
     ) {}
 }
